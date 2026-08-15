@@ -3,7 +3,7 @@
 Multi-tenant clinic management. One Next.js application serving many clinics,
 with per-clinic data isolation enforced in the database.
 
-**Status:** Phase 1 of 5 complete — foundation, multi-tenancy and clinic users.
+**Status:** Phases 1–2 of 5 complete — foundation, multi-tenancy, clinic users, patients and appointments.
 
 ---
 
@@ -53,13 +53,14 @@ tenant-isolation tests — is in **[docs/setup.md](docs/setup.md)**.
 | [docs/development-rules.md](docs/development-rules.md) | Frontend and coding standards |
 | [CLAUDE.md](CLAUDE.md) | Development contract |
 | [summary/phase1_implementation.md](summary/phase1_implementation.md) | Phase 1 report and verification results |
+| [summary/phase2_implementation.md](summary/phase2_implementation.md) | Phase 2 report and verification results |
 
 ## Delivery phases
 
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Foundation, multi-tenancy, clinic users | ✅ Complete |
-| 2 | Patients, doctors, appointments | Not started |
+| 2 | Patients, doctors, appointments | ✅ Complete |
 | 3 | Consultations, medicines, printing | Not started |
 | 4 | Billing, notifications | Not started |
 | 5 | Documents, audit, production readiness | Not started |
@@ -71,6 +72,8 @@ npm run dev          # development server
 npm run build        # production build
 npm run type-check   # TypeScript, strict
 npm run lint         # ESLint
+
+npm run verify:isolation   # multi-tenant isolation suite (needs .env.local)
 ```
 
 ## Security notes

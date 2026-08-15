@@ -23,18 +23,23 @@ Fill in `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and
 `SUPABASE_SERVICE_ROLE_KEY`. `.env.local` is gitignored and must stay that way —
 the service-role key bypasses RLS entirely.
 
-## 3. Apply the migration
+## 3. Apply the migrations
 
-Supabase Dashboard → SQL Editor → paste `supabase/migrations/0001_phase1_foundation.sql` → Run.
+Supabase Dashboard → SQL Editor. Paste and run each file from
+`supabase/migrations/` **in filename order**:
 
-Confirm it landed:
+1. `0001_phase1_foundation.sql`
+2. `0002_phase2_patients_appointments.sql`
+
+Confirm they landed:
 
 ```sql
 SELECT tablename, rowsecurity FROM pg_tables
 WHERE schemaname = 'public' ORDER BY tablename;
 ```
 
-Expect `clinics`, `clinic_config`, `profiles`, each with `rowsecurity = true`.
+Expect `appointments`, `clinics`, `clinic_config`, `doctor_availability`,
+`patient_history`, `patients`, `profiles` — each with `rowsecurity = true`.
 
 ## 4. Seed the first SUPER_ADMIN
 
@@ -80,9 +85,30 @@ The Phase 1 demo flow from `docs/requirements.md`:
 
 ## Multi-tenant isolation tests
 
-**These are the tests that matter.** Run them after creating **two** clinics, A and B.
-Every one must fail to return data. Passing type-checks proves nothing here —
+**These are the tests that matter.** Passing type-checks proves nothing here —
 isolation lives in RLS and in the server actions.
+
+### Automated suite
+
+```bash
+npm run verify:isolation
+```
+
+`scripts/verify-isolation.mjs` provisions two clinics with a full set of roles,
+signs each in for a **real authenticated session** (never the service-role key,
+which bypasses RLS and would prove nothing), asserts the boundaries, then
+removes every fixture it created.
+
+It covers cross-clinic reads and writes, role write restrictions, availability
+ownership, appointment integrity, and per-clinic `patient_number` uniqueness.
+
+**Re-run it at the end of every phase**, not just the phase that added a table —
+each new clinic-owned table inherits these policy patterns, so a regression in
+one phase surfaces here.
+
+### Manual checks
+
+The suite does not drive the browser. These still warrant a click-through:
 
 ### Via the UI
 
@@ -93,6 +119,11 @@ isolation lives in RLS and in the server actions.
 | Doctor of A opens `/users` | Redirected to `/dashboard` — ADMIN only |
 | Signed-out user opens `/dashboard` | Redirected to `/login` |
 | ADMIN of A creates a user | New user's `clinic_id` is A, with no way to choose B |
+| ADMIN opens `/patients` | Sees the list; no "Register patient" button |
+| OPTOMETRIST opens `/patients/new` | Redirected to `/dashboard` |
+| FRONT_DESK opens `/schedule` | Redirected to `/dashboard` — DOCTOR only |
+| Book outside a doctor's availability | Rejected: "The doctor is not available at that time" |
+| Book over an existing appointment | Rejected: "That slot overlaps an existing appointment" |
 
 ### Via SQL, as a real user
 

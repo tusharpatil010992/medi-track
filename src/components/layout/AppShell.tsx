@@ -1,10 +1,13 @@
 "use client";
 
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import EventAvailableIcon from "@mui/icons-material/EventAvailable";
 import LocalHospitalIcon from "@mui/icons-material/LocalHospital";
 import LogoutIcon from "@mui/icons-material/Logout";
 import MenuIcon from "@mui/icons-material/Menu";
 import PeopleIcon from "@mui/icons-material/People";
+import MedicalInformationIcon from "@mui/icons-material/MedicalInformation";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
@@ -33,6 +36,9 @@ const ICONS = {
   clinics: LocalHospitalIcon,
   users: PeopleIcon,
   settings: SettingsIcon,
+  patients: MedicalInformationIcon,
+  appointments: CalendarMonthIcon,
+  schedule: EventAvailableIcon,
 } as const;
 
 interface AppShellProps {

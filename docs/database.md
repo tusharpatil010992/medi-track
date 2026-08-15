@@ -88,12 +88,14 @@ user_role:
   - PATIENT
 
 appointment_status:
-  - SCHEDULED
-  - IN_PROGRESS
-  - COMPLETED
-  - CANCELLED
-  - NO_SHOW
-  - RESCHEDULED
+  - SCHEDULED      booked, not yet acknowledged
+  - CONFIRMED      patient confirmed attendance
+  - CHECKED_IN     arrived at the desk
+  - IN_PROGRESS    with the clinician
+  - COMPLETED      consultation finished
+  - CANCELLED      called off
+  - NO_SHOW        did not arrive
+  - RESCHEDULED    superseded by a replacement booking
 
 consultation_status:
   - DRAFT
@@ -209,7 +211,10 @@ audit_action:
 **patients**
 - `id` (UUID, PK)
 - `clinic_id` (UUID, FK → clinics)
-- `patient_number` (VARCHAR)
+- `patient_number` (VARCHAR) — clinic-facing reference (`P-0001`), allocated in
+  application code. Unique **per clinic**, so two clinics may both hold a `P-0001`.
+- `first_name` (VARCHAR, NOT NULL)
+- `last_name` (VARCHAR, NOT NULL)
 - `email` (VARCHAR)
 - `phone` (VARCHAR)
 - `date_of_birth` (DATE)
@@ -521,6 +526,28 @@ accepted, then becomes invisible to its author. Every policy permitting
 
 Tables get no `DELETE` policy: records are deactivated via `is_active`.
 
+### Role-scoped write policies
+
+Read access is usually clinic-wide, but writes are narrowed by role. Phase 2
+limits patient and appointment writes to FRONT_DESK and DOCTOR; ADMIN and
+OPTOMETRIST read only:
+
+```sql
+CREATE POLICY patients_insert ON patients
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    clinic_id = get_user_clinic_id()
+    AND current_user_role() IN ('FRONT_DESK', 'DOCTOR')
+  );
+```
+
+`doctor_availability` narrows further to row ownership, so a doctor can only
+publish their own schedule:
+
+```sql
+AND current_user_role() = 'DOCTOR' AND doctor_id = auth.uid()
+```
+
 ### Special Policies
 
 **Profiles:** Users see profiles from their clinic; SUPER_ADMIN sees all
@@ -579,6 +606,7 @@ Supabase SQL Editor (paste and run) or `supabase db push`.
 | Migration | Contents |
 |---|---|
 | `0001_phase1_foundation.sql` | `user_role` enum, `clinics`, `clinic_config`, `profiles`, RLS helper functions, RLS policies |
+| `0002_phase2_patients_appointments.sql` | `appointment_status` enum, `patients`, `patient_history`, `doctor_availability`, `appointments`, RLS policies |
 
 Each phase adds its own migration rather than editing an applied one. Phase 2–5
 tables documented above are not created until their phase ships.
