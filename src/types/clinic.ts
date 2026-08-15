@@ -9,11 +9,27 @@ export interface Clinic {
   postal_code: string | null;
   country: string | null;
   timezone: string;
+  /**
+   * Blank space reserved at the top of printed letters, as a percentage of A4
+   * page height, so content clears pre-printed letterhead. 0 disables the gap.
+   */
+  letterhead_gap_percent: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
   created_by: string | null;
   updated_by: string | null;
+}
+
+/** A4 page height. Printed output is fixed-size, so this is a real constant. */
+export const A4_HEIGHT_MM = 297;
+
+export const DEFAULT_LETTERHEAD_GAP_PERCENT = 12;
+
+/** Converts the stored percentage into a CSS length for the print stylesheet. */
+export function letterheadGapToMm(percent: number): string {
+  const safe = Number.isFinite(percent) ? Math.min(Math.max(percent, 0), 50) : DEFAULT_LETTERHEAD_GAP_PERCENT;
+  return `${((A4_HEIGHT_MM * safe) / 100).toFixed(1)}mm`;
 }
 
 /**

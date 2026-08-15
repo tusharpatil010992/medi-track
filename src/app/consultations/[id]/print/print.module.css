@@ -1,0 +1,151 @@
+/*
+ * Print stylesheet for the consultation letter.
+ *
+ * Uses plain CSS rather than MUI's sx because print output must be predictable
+ * and free of theme-driven colour. Values are fixed on purpose: a printed
+ * letter is not responsive and must not shift with light/dark mode.
+ */
+
+.sheet {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  background: #ffffff;
+  color: #000000;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/*
+ * Reserved space for the clinic's pre-printed letterhead.
+ *
+ * The letter deliberately prints no clinic header. Clinics use their own
+ * stationery, so the top of the page is left clear rather than overprinting it.
+ * On screen a dashed outline marks the reserved band; in print it is invisible
+ * and only the height remains.
+ *
+ * Height is set inline, per clinic, from clinics.letterhead_gap_percent
+ * (Clinic Settings). Nothing is hardcoded here.
+ */
+.letterheadSpace {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #cccccc;
+  margin-bottom: 16px;
+}
+
+.letterheadHint {
+  font-size: 11px;
+  color: #999999;
+  letter-spacing: 0.04em;
+}
+
+.patientBlock {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #cccccc;
+  margin-bottom: 16px;
+}
+
+.right {
+  text-align: right;
+}
+
+.muted {
+  color: #555555;
+  font-size: 12px;
+}
+
+.section {
+  margin-bottom: 16px;
+  break-inside: avoid;
+}
+
+.sectionTitle {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px;
+}
+
+.body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+}
+
+.table th,
+.table td {
+  border: 1px solid #999999;
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.table th {
+  background: #f0f0f0;
+  font-weight: 600;
+}
+
+.footer {
+  margin-top: 48px;
+  display: flex;
+  justify-content: flex-end;
+  break-inside: avoid;
+}
+
+.signature {
+  text-align: center;
+  min-width: 220px;
+}
+
+.signatureLine {
+  border-top: 1px solid #000000;
+  margin-bottom: 6px;
+  height: 40px;
+}
+
+.noPrint {
+  margin-bottom: 16px;
+  text-align: right;
+}
+
+@media print {
+  /* Hide interactive controls and drop page margins to the printer's own. */
+  .noPrint {
+    display: none;
+  }
+
+  .sheet {
+    max-width: none;
+    padding: 0;
+    font-size: 12px;
+  }
+
+  /*
+   * Keep the reserved height so content still clears the pre-printed
+   * letterhead, but drop the outline and the on-screen label — neither should
+   * ever appear on paper.
+   */
+  .letterheadSpace {
+    border: none;
+  }
+
+  .letterheadHint {
+    display: none;
+  }
+
+  @page {
+    margin: 16mm;
+  }
+}

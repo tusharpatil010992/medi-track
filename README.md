@@ -3,7 +3,7 @@
 Multi-tenant clinic management. One Next.js application serving many clinics,
 with per-clinic data isolation enforced in the database.
 
-**Status:** Phases 1–2 of 5 complete — foundation, multi-tenancy, clinic users, patients and appointments.
+**Status:** Phases 1–3 of 5 complete — foundation, patients and appointments, and the clinical workflow.
 
 ---
 
@@ -54,6 +54,8 @@ tenant-isolation tests — is in **[docs/setup.md](docs/setup.md)**.
 | [CLAUDE.md](CLAUDE.md) | Development contract |
 | [summary/phase1_implementation.md](summary/phase1_implementation.md) | Phase 1 report and verification results |
 | [summary/phase2_implementation.md](summary/phase2_implementation.md) | Phase 2 report and verification results |
+| [summary/phase3_implementation.md](summary/phase3_implementation.md) | Phase 3 report and verification results |
+| [summary/open-items.md](summary/open-items.md) | Deferred items awaiting decision |
 
 ## Delivery phases
 
@@ -61,7 +63,7 @@ tenant-isolation tests — is in **[docs/setup.md](docs/setup.md)**.
 |---|---|---|
 | 1 | Foundation, multi-tenancy, clinic users | ✅ Complete |
 | 2 | Patients, doctors, appointments | ✅ Complete |
-| 3 | Consultations, medicines, printing | Not started |
+| 3 | Consultations, medicines, printing | ✅ Complete |
 | 4 | Billing, notifications | Not started |
 | 5 | Documents, audit, production readiness | Not started |
 

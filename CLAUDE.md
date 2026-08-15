@@ -656,7 +656,7 @@ DONE ✓
 |---|---|---|
 | 1 | Foundation, multi-tenancy, clinic users | ✅ Complete — schema applied, tenant isolation verified 10/10 ([summary](./summary/phase1_implementation.md)) |
 | 2 | Patients, doctors, appointments | ✅ Complete — 24/24 isolation tests ([summary](./summary/phase2_implementation.md)) |
-| 3 | Consultations, medicines, printing | Not started |
+| 3 | Consultations, medicines, printing | ✅ Complete — 44/44 isolation tests ([summary](./summary/phase3_implementation.md)) |
 | 4 | Billing, notifications | Not started |
 | 5 | Documents, audit, production readiness | Not started |
 
