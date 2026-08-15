@@ -580,6 +580,51 @@ const { data: otherPatientHistory } = await asDoctorA
 check("Cannot read consultations of a clinic B patient", (otherPatientHistory?.length ?? 0) === 0);
 
 // ---------------------------------------------------------------------------
+section("Print settings — letterhead gap");
+
+// The whole reason this column sits on `clinics` rather than `clinic_config`:
+// DOCTORs print the letters, and clinic_config is ADMIN-only because it stores
+// credentials. If a doctor cannot read the gap, every printed letter silently
+// falls back to the default.
+const { data: doctorReadsGap } = await asDoctorA
+  .from("clinics")
+  .select("letterhead_gap_percent")
+  .eq("id", clinicA)
+  .maybeSingle();
+check(
+  "DOCTOR can read the letterhead gap (needed to print)",
+  doctorReadsGap?.letterhead_gap_percent !== undefined,
+  `${doctorReadsGap?.letterhead_gap_percent}%`,
+);
+
+const { data: adminSetGap } = await asAdminA
+  .from("clinics")
+  .update({ letterhead_gap_percent: 20 })
+  .eq("id", clinicA)
+  .select("letterhead_gap_percent");
+check("ADMIN can set own clinic's gap", Number(adminSetGap?.[0]?.letterhead_gap_percent) === 20);
+
+const { data: doctorSetGap } = await asDoctorA
+  .from("clinics")
+  .update({ letterhead_gap_percent: 45 })
+  .eq("id", clinicA)
+  .select("id");
+check("DOCTOR cannot change the gap", (doctorSetGap?.length ?? 0) === 0);
+
+const { data: crossGap } = await asAdminA
+  .from("clinics")
+  .update({ letterhead_gap_percent: 45 })
+  .eq("id", clinicB)
+  .select("id");
+check("ADMIN A cannot change clinic B's gap", (crossGap?.length ?? 0) === 0);
+
+const { error: rangeErr } = await asAdminA
+  .from("clinics")
+  .update({ letterhead_gap_percent: 80 })
+  .eq("id", clinicA);
+check("Out-of-range gap rejected", rangeErr?.code === "23514", rangeErr?.code ?? "none");
+
+// ---------------------------------------------------------------------------
 console.log("\ncleaning up…");
 for (const id of created.clinics) await admin.from("clinics").delete().eq("id", id);
 for (const id of created.users) await admin.auth.admin.deleteUser(id);
