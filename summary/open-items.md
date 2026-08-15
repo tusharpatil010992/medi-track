@@ -88,8 +88,7 @@ Manual checklist lives in `docs/setup.md`.
 **Raised:** Phase 1 · **Severity:** worth doing
 
 - The SUPER_ADMIN password was generated in-session and appears in the chat
-  transcript. **Rotate it** — the profile/password feature now planned makes
-  this self-service.
+  transcript. **Rotate it** — now self-service at `/profile`.
 - `plan/secrets.txt` holds the Supabase **database password** and direct
   connection string. It is gitignored and has never been committed, but it sits
   inside the project folder, where an accidental zip or screen-share would
@@ -115,18 +114,16 @@ default 12%). Two loose ends remain:
 
 ---
 
-## 9. Pending feature work
-**Raised:** Phase 3 · **Severity:** planned, not started
+## 9. Password recovery still has no self-service path
+**Raised:** Phase 3 · **Severity:** low, closes in Phase 4
 
-Two additions requested mid-Phase-3, planned but not implemented — see
-[`plan-profile-and-history.md`](plan-profile-and-history.md):
+`/profile` now lets any user change their own password, and an ADMIN can issue a
+temporary one for staff in their clinic. Two gaps remain by design:
 
-- **Profile section with password change.** No user can currently change their
-  own password, and there is no recovery path at all until Resend lands in
-  Phase 4. Includes ADMIN reset for their own clinic's users.
-- **Per-visit history shown date-wise.** The field itself
-  (`consultations.patient_history`) already exists; only the display of prior
-  visits is missing. No schema change required.
+- **No email-based "forgot password"** — needs Resend, which arrives in Phase 4.
+- **A locked-out clinic ADMIN still needs the Supabase dashboard.** An ADMIN
+  cannot reset another ADMIN (peers should not be able to seize each other's
+  accounts), and SUPER_ADMIN reset was offered but not chosen.
 
 ---
 
@@ -142,3 +139,5 @@ Two additions requested mid-Phase-3, planned but not implemented — see
 | `optical_power` had no ADD field | 3 | Fixed — `right_eye_add` + `left_eye_add` |
 | False alarm: Phase 3–5 tables appeared present | 2 | Disproved — the probe used `head:true`, masking a `PGRST205` |
 | Phase 3 runtime verification pending | 3 | Done — migration 0003 applied, 44/44 passing |
+| No way to change your own password | 3 | Done — `/profile` plus ADMIN reset, 46/46 passing |
+| Per-visit history not visible on later visits | 3 | Done — earlier entries shown date-wise, no schema change |

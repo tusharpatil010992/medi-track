@@ -84,6 +84,77 @@ export async function createClinicUser(
   return { error: null, provisioned: { fullName, email, temporaryPassword } };
 }
 
+export interface ResetPasswordState {
+  error: string | null;
+  reset: { fullName: string; temporaryPassword: string } | null;
+}
+
+/**
+ * Issues a new temporary password for a user in the acting ADMIN's clinic.
+ *
+ * Exists because there is no self-service recovery yet — accounts are created
+ * with a one-time password and email is not wired until Phase 4, so a forgotten
+ * password would otherwise mean editing the user in the Supabase dashboard.
+ *
+ * Two refusals matter:
+ *  - An ADMIN cannot reset their own password here. /profile requires the
+ *    current password; allowing self-reset through this path would let a
+ *    hijacked session bypass that check entirely.
+ *  - An ADMIN cannot reset another ADMIN. Peers should not be able to seize
+ *    each other's accounts.
+ */
+export async function resetUserPassword(
+  _prevState: ResetPasswordState,
+  formData: FormData,
+): Promise<ResetPasswordState> {
+  const actingProfile = await requireRole(["ADMIN"]);
+  const clinicId = requireClinicId(actingProfile);
+
+  const userId = String(formData.get("user_id") ?? "");
+  if (!userId) return { error: "Missing user reference.", reset: null };
+
+  if (userId === actingProfile.id) {
+    return {
+      error: "Change your own password from My profile, where the current one is required.",
+      reset: null,
+    };
+  }
+
+  const supabase = await createClient();
+
+  // Filtered by clinic_id, so a guessed id from another clinic finds nothing.
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("id, full_name, role")
+    .eq("id", userId)
+    .eq("clinic_id", clinicId)
+    .maybeSingle<{ id: string; full_name: string; role: string }>();
+
+  if (!target) return { error: "User not found in this clinic.", reset: null };
+  if (target.role === "ADMIN") {
+    return { error: "An administrator cannot reset another administrator's password.", reset: null };
+  }
+
+  const temporaryPassword = generateTemporaryPassword();
+
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    password: temporaryPassword,
+  });
+
+  if (error) return { error: `Could not reset password: ${error.message}`, reset: null };
+
+  await supabase
+    .from("profiles")
+    .update({ updated_at: new Date().toISOString(), updated_by: actingProfile.id })
+    .eq("id", userId)
+    .eq("clinic_id", clinicId);
+
+  revalidatePath("/users");
+
+  return { error: null, reset: { fullName: target.full_name, temporaryPassword } };
+}
+
 /**
  * Activates or deactivates a clinic user.
  *

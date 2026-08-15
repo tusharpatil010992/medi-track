@@ -13,7 +13,8 @@ export interface NavItem {
     | "appointments"
     | "schedule"
     | "consultations"
-    | "medicines";
+    | "medicines"
+    | "profile";
 }
 
 /**
@@ -32,6 +33,7 @@ const APPOINTMENTS: NavItem = {
   href: "/appointments",
   icon: "appointments",
 };
+const PROFILE: NavItem = { label: "My Profile", href: "/profile", icon: "profile" };
 const CONSULTATIONS: NavItem = {
   label: "Consultations",
   href: "/consultations",
@@ -39,7 +41,7 @@ const CONSULTATIONS: NavItem = {
 };
 
 export const NAVIGATION: Record<UserRole, NavItem[]> = {
-  SUPER_ADMIN: [DASHBOARD, { label: "Clinics", href: "/clinics", icon: "clinics" }],
+  SUPER_ADMIN: [DASHBOARD, { label: "Clinics", href: "/clinics", icon: "clinics" }, PROFILE],
   ADMIN: [
     DASHBOARD,
     PATIENTS,
@@ -48,6 +50,7 @@ export const NAVIGATION: Record<UserRole, NavItem[]> = {
     { label: "Medicines", href: "/medicines", icon: "medicines" },
     { label: "Users", href: "/users", icon: "users" },
     { label: "Clinic Settings", href: "/settings", icon: "settings" },
+    PROFILE,
   ],
   DOCTOR: [
     DASHBOARD,
@@ -55,9 +58,10 @@ export const NAVIGATION: Record<UserRole, NavItem[]> = {
     APPOINTMENTS,
     CONSULTATIONS,
     { label: "My Schedule", href: "/schedule", icon: "schedule" },
+    PROFILE,
   ],
-  OPTOMETRIST: [DASHBOARD, PATIENTS, APPOINTMENTS, CONSULTATIONS],
-  STAFF: [DASHBOARD],
-  FRONT_DESK: [DASHBOARD, PATIENTS, APPOINTMENTS, CONSULTATIONS],
-  PATIENT: [DASHBOARD],
+  OPTOMETRIST: [DASHBOARD, PATIENTS, APPOINTMENTS, CONSULTATIONS, PROFILE],
+  STAFF: [DASHBOARD, PROFILE],
+  FRONT_DESK: [DASHBOARD, PATIENTS, APPOINTMENTS, CONSULTATIONS, PROFILE],
+  PATIENT: [DASHBOARD, PROFILE],
 };

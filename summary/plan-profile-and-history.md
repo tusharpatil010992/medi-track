@@ -3,7 +3,7 @@
 Two additions requested during Phase 3. Neither is part of the original 5-phase
 roadmap; both are small and self-contained.
 
-Status: **plan only — not implemented.**
+Status: **implemented** (2026-08-16). Retained as the design record.
 
 ---
 

@@ -13,6 +13,10 @@ import { ConsultationDetailsForm } from "@/components/consultations/Consultation
 import { ConsultationStatusActions } from "@/components/consultations/ConsultationStatusActions";
 import { OpticalPowerForm } from "@/components/consultations/OpticalPowerForm";
 import { PrescriptionForm } from "@/components/consultations/PrescriptionForm";
+import {
+  PreviousHistory,
+  type PriorHistoryEntry,
+} from "@/components/consultations/PreviousHistory";
 import { requireClinicId, requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -43,7 +47,8 @@ export default async function ConsultationPage({ params }: { params: Promise<{ i
 
   if (!consultation) notFound();
 
-  const [{ data: patient }, { data: prescription }, { data: optical }] = await Promise.all([
+  const [{ data: patient }, { data: prescription }, { data: optical }, { data: priorHistory }] =
+    await Promise.all([
     supabase
       .from("patients")
       .select("*")
@@ -62,6 +67,17 @@ export default async function ConsultationPage({ params }: { params: Promise<{ i
       .eq("consultation_id", id)
       .eq("clinic_id", clinicId)
       .maybeSingle<OpticalPower>(),
+    // Earlier visits that actually recorded history, newest first.
+    supabase
+      .from("consultations")
+      .select("id, consultation_date, patient_history")
+      .eq("clinic_id", clinicId)
+      .eq("patient_id", consultation.patient_id)
+      .neq("id", consultation.id)
+      .not("patient_history", "is", null)
+      .order("consultation_date", { ascending: false })
+      .limit(10)
+      .returns<PriorHistoryEntry[]>(),
   ]);
 
   // Medicines are only readable by ADMIN/DOCTOR/OPTOMETRIST under RLS, so this
@@ -148,6 +164,8 @@ export default async function ConsultationPage({ params }: { params: Promise<{ i
           This consultation belongs to another clinician, so it is read-only for you.
         </Alert>
       ) : null}
+
+      <PreviousHistory entries={priorHistory ?? []} />
 
       <ConsultationDetailsForm consultation={consultation} readOnly={!canEditClinical} />
 

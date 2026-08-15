@@ -558,6 +558,28 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+section("Profile — per-visit history is clinic and patient scoped");
+
+// The consultation page shows history from a patient's earlier visits. That
+// query must never reach another clinic, or another patient in the same clinic.
+const { data: priorHistory } = await asDoctorA
+  .from("consultations")
+  .select("id, clinic_id, patient_id, patient_history")
+  .not("patient_history", "is", null);
+
+check(
+  "Prior-history query stays inside own clinic",
+  (priorHistory ?? []).every((row) => row.clinic_id === clinicA),
+  `${priorHistory?.length ?? 0} row(s)`,
+);
+
+const { data: otherPatientHistory } = await asDoctorA
+  .from("consultations")
+  .select("id")
+  .eq("patient_id", patientB);
+check("Cannot read consultations of a clinic B patient", (otherPatientHistory?.length ?? 0) === 0);
+
+// ---------------------------------------------------------------------------
 console.log("\ncleaning up…");
 for (const id of created.clinics) await admin.from("clinics").delete().eq("id", id);
 for (const id of created.users) await admin.auth.admin.deleteUser(id);
