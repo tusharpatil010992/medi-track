@@ -4,7 +4,7 @@ Running log of things flagged during implementation and **deferred by decision
 until after the final phase**. Nothing here is blocking; each is recorded so it
 is decided deliberately rather than forgotten.
 
-Last updated: 2026-08-16 (during Phase 3)
+Last updated: 2026-08-16 (post Phase 3)
 
 ---
 
@@ -141,3 +141,4 @@ temporary one for staff in their clinic. Two gaps remain by design:
 | Phase 3 runtime verification pending | 3 | Done — migration 0003 applied, 44/44 passing |
 | No way to change your own password | 3 | Done — `/profile` plus ADMIN reset, 46/46 passing |
 | Per-visit history not visible on later visits | 3 | Done — earlier entries shown date-wise, no schema change |
+| Clinic deactivation was cosmetic | post-3 | Fixed — suspends the whole clinic, 62/62 ([detail](clinic-deactivation-rule.md)) |

@@ -32,6 +32,7 @@ Supabase Dashboard → SQL Editor. Paste and run each file from
 2. `0002_phase2_patients_appointments.sql`
 3. `0003_phase3_clinical.sql`
 4. `0004_letterhead_gap.sql`
+5. `0005_clinic_deactivation.sql`
 
 Confirm they landed:
 
@@ -135,6 +136,9 @@ The suite does not drive the browser. These still warrant a click-through:
 | Prescribe a deactivated medicine | Rejected: "… is deactivated and cannot be prescribed" |
 | Complete a consultation, then edit it | Fields read-only; save refused |
 | Open `/consultations/[id]/print` | Letter renders with no sidebar; browser print dialog is clean |
+| SUPER_ADMIN deactivates a clinic, then its ADMIN signs in | Rejected: "This clinic is currently suspended" |
+| A user of that clinic already signed in | Loses access on next request, redirected to `/login` |
+| SUPER_ADMIN reactivates the clinic | Access restored; individually disabled users stay disabled |
 
 ### Via SQL, as a real user
 

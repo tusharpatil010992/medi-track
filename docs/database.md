@@ -514,9 +514,17 @@ RETURNS UUID
 LANGUAGE SQL STABLE
 SECURITY DEFINER SET search_path = public
 AS $$
-  SELECT clinic_id FROM profiles WHERE id = auth.uid() AND is_active = TRUE;
+  SELECT p.clinic_id
+  FROM profiles p
+  JOIN clinics c ON c.id = p.clinic_id
+  WHERE p.id = auth.uid()
+    AND p.is_active = TRUE
+    AND c.is_active = TRUE;
 $$;
 ```
+
+The join on `clinics` is what makes clinic deactivation real — see
+[Clinic deactivation](#clinic-deactivation) below.
 
 `current_user_role()` and `is_super_admin()` follow the same shape. Inlining
 `(SELECT role FROM profiles WHERE id = auth.uid())` directly into a policy
@@ -567,6 +575,34 @@ Phase 3 continues the pattern: `consultations`, `prescriptions` and
 `prescription_items` are DOCTOR-write; `medicines` is ADMIN-write and readable
 only by ADMIN/DOCTOR/OPTOMETRIST; `optical_power` is writable by DOCTOR and
 OPTOMETRIST.
+
+### Clinic deactivation
+
+SUPER_ADMIN can suspend a clinic by setting `clinics.is_active = FALSE`. Because
+all 35 policies resolve tenancy through `get_user_clinic_id()`, and that
+function now requires the clinic to be active, a suspended clinic returns NULL
+there. `clinic_id = NULL` evaluates to NULL rather than TRUE, so **every**
+clinic-scoped read and write yields zero rows — across every table, in every
+phase, with no policy needing to know about it.
+
+What suspension does and does not do:
+
+| | |
+|---|---|
+| Blocks sign-in for every user in the clinic | Yes — **including that clinic's own ADMIN** |
+| Applies to sessions already open | Yes, from the next request |
+| Changes `profiles.is_active` for those users | **No** |
+| Reversible by SUPER_ADMIN | Yes — `is_super_admin()` ignores clinic state |
+
+That third row matters. Suspension gates on the clinic's flag rather than
+flipping each user's own flag, so reactivating a clinic restores exactly the
+users who were enabled before — anyone individually deactivated stays that way.
+
+`current_user_clinic_is_active()` exists so the application can tell a suspended
+clinic apart from an empty one and show a real message. Without it, a locked-out
+user would simply see blank screens: once suspended, they can no longer read
+even their own `clinics` row, since `clinics_select` also routes through
+`get_user_clinic_id()`.
 
 ### Where a rule cannot live in RLS
 
@@ -649,6 +685,7 @@ Supabase SQL Editor (paste and run) or `supabase db push`.
 | `0002_phase2_patients_appointments.sql` | `appointment_status` enum, `patients`, `patient_history`, `doctor_availability`, `appointments`, RLS policies |
 | `0003_phase3_clinical.sql` | `consultation_status` / `prescription_status` enums, `consultations`, `medicines`, `prescriptions`, `prescription_items`, `optical_power`, RLS policies |
 | `0004_letterhead_gap.sql` | `clinics.letterhead_gap_percent` — per-clinic print offset for pre-printed letterhead |
+| `0005_clinic_deactivation.sql` | Gates `get_user_clinic_id()` on clinic active state; adds `current_user_clinic_is_active()` |
 
 Each phase adds its own migration rather than editing an applied one. Phase 2–5
 tables documented above are not created until their phase ships.

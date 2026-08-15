@@ -56,6 +56,7 @@ tenant-isolation tests — is in **[docs/setup.md](docs/setup.md)**.
 | [summary/phase2_implementation.md](summary/phase2_implementation.md) | Phase 2 report and verification results |
 | [summary/phase3_implementation.md](summary/phase3_implementation.md) | Phase 3 report and verification results |
 | [summary/open-items.md](summary/open-items.md) | Deferred items awaiting decision |
+| [summary/clinic-deactivation-rule.md](summary/clinic-deactivation-rule.md) | What suspending a clinic does, and why |
 
 ## Delivery phases
 

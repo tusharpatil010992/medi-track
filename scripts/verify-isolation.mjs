@@ -625,6 +625,86 @@ const { error: rangeErr } = await asAdminA
 check("Out-of-range gap rejected", rangeErr?.code === "23514", rangeErr?.code ?? "none");
 
 // ---------------------------------------------------------------------------
+section("Clinic deactivation suspends the whole clinic");
+
+// Baseline: clinic A is active and its staff can work.
+const { data: beforePatients } = await asFrontDeskA.from("patients").select("id");
+check("Before: FRONT_DESK reads patients", (beforePatients?.length ?? 0) > 0);
+
+await admin.from("clinics").update({ is_active: false }).eq("id", clinicA);
+
+// Existing sessions must lose access too, not just future sign-ins.
+const { data: afterPatients } = await asFrontDeskA.from("patients").select("id");
+check(
+  "After: existing session reads no patients",
+  (afterPatients?.length ?? 0) === 0,
+  `${afterPatients?.length ?? 0} row(s)`,
+);
+
+const { error: afterWrite } = await asFrontDeskA.from("patients").insert({
+  clinic_id: clinicA,
+  patient_number: `S-${randomBytes(3).toString("hex")}`,
+  first_name: "Suspended",
+  last_name: "Write",
+});
+check("After: writes rejected", Boolean(afterWrite), afterWrite?.code ?? "none");
+
+const { data: afterConsults } = await asDoctorA.from("consultations").select("id");
+check("After: DOCTOR reads no consultations", (afterConsults?.length ?? 0) === 0);
+
+// A suspended ADMIN still resolves their OWN profile row: profiles_select
+// grants `id = auth.uid()` first, deliberately, or session bootstrap could
+// never load anyone — including SUPER_ADMIN, whose clinic_id is NULL. What must
+// be gone is everyone else's.
+const { data: adminSeesOthers } = await asAdminA
+  .from("profiles")
+  .select("id")
+  .neq("id", adminA.id);
+check(
+  "After: clinic's own ADMIN cannot see other users",
+  (adminSeesOthers?.length ?? 0) === 0,
+  `${adminSeesOthers?.length ?? 0} row(s)`,
+);
+
+const { data: adminSeesPatients } = await asAdminA.from("patients").select("id");
+check("After: clinic's own ADMIN reads no patients", (adminSeesPatients?.length ?? 0) === 0);
+
+const { data: adminFlag } = await asAdminA.rpc("current_user_clinic_is_active");
+check("After: clinic's own ADMIN is refused by the app layer", adminFlag === false);
+
+// A fresh sign-in must be refused by the application layer.
+const freshClient = createClient(URL, ANON, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+await freshClient.auth.signInWithPassword({ email: frontDeskA.email, password: frontDeskA.password });
+const { data: freshFlag } = await freshClient.rpc("current_user_clinic_is_active");
+check("After: clinic-active check reports false on fresh sign-in", freshFlag === false, String(freshFlag));
+
+// SUPER_ADMIN must remain able to undo this, or deactivation is irreversible.
+const { data: superSees } = await admin.from("clinics").select("id, is_active").eq("id", clinicA).maybeSingle();
+check("After: clinic still visible to platform level", superSees?.is_active === false);
+
+await admin.from("clinics").update({ is_active: true }).eq("id", clinicA);
+
+const { data: reactivated } = await asFrontDeskA.from("patients").select("id");
+check(
+  "Reactivation restores access immediately",
+  (reactivated?.length ?? 0) > 0,
+  `${reactivated?.length ?? 0} row(s)`,
+);
+
+// Individually deactivated users must NOT be silently switched back on.
+await admin.from("profiles").update({ is_active: false }).eq("id", doctorA2.id);
+await admin.from("clinics").update({ is_active: false }).eq("id", clinicA);
+await admin.from("clinics").update({ is_active: true }).eq("id", clinicA);
+const { data: stillOff } = await admin
+  .from("profiles")
+  .select("is_active")
+  .eq("id", doctorA2.id)
+  .maybeSingle();
+check("Reactivation does not revive individually disabled users", stillOff?.is_active === false);
+
+// ---------------------------------------------------------------------------
 console.log("\ncleaning up…");
 for (const id of created.clinics) await admin.from("clinics").delete().eq("id", id);
 for (const id of created.users) await admin.auth.admin.deleteUser(id);
