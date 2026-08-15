@@ -333,6 +333,298 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+section("Phase 3 — consultations are DOCTOR-only");
+
+const consultationFixture = {
+  clinic_id: clinicA,
+  patient_id: patientA,
+  doctor_id: doctorA.id,
+  consultation_date: "2030-01-07",
+};
+
+const { data: ownConsultation, error: doctorConsultErr } = await asDoctorA
+  .from("consultations")
+  .insert(consultationFixture)
+  .select("id")
+  .single();
+check("DOCTOR can open a consultation", !doctorConsultErr, doctorConsultErr?.message ?? "");
+
+const { error: frontDeskConsultErr } = await asFrontDeskA
+  .from("consultations")
+  .insert(consultationFixture);
+check(
+  "FRONT_DESK cannot open a consultation",
+  Boolean(frontDeskConsultErr),
+  frontDeskConsultErr?.code ?? "none",
+);
+
+const { error: adminConsultErr } = await asAdminA
+  .from("consultations")
+  .insert(consultationFixture);
+check(
+  "ADMIN cannot open a consultation",
+  Boolean(adminConsultErr),
+  adminConsultErr?.code ?? "none",
+);
+
+const { error: optomConsultErr } = await asOptometristA
+  .from("consultations")
+  .insert(consultationFixture);
+check(
+  "OPTOMETRIST cannot open a consultation",
+  Boolean(optomConsultErr),
+  optomConsultErr?.code ?? "none",
+);
+
+// Walk-in: appointment_id omitted entirely.
+const { error: walkInErr } = await asDoctorA.from("consultations").insert({
+  clinic_id: clinicA,
+  patient_id: patientA,
+  doctor_id: doctorA.id,
+  consultation_date: "2030-01-08",
+});
+check("Walk-in consultation without an appointment accepted", !walkInErr, walkInErr?.message ?? "");
+
+// ---------------------------------------------------------------------------
+section("Phase 3 — medicines are ADMIN-managed");
+
+const { data: medicineA, error: adminMedErr } = await asAdminA
+  .from("medicines")
+  .insert({ clinic_id: clinicA, name: "Probe Aspirin", strength: "75", unit: "mg" })
+  .select("id")
+  .single();
+check("ADMIN can add a medicine", !adminMedErr, adminMedErr?.message ?? "");
+
+const { error: doctorMedErr } = await asDoctorA
+  .from("medicines")
+  .insert({ clinic_id: clinicA, name: "Doctor Attempt" });
+check("DOCTOR cannot add a medicine", Boolean(doctorMedErr), doctorMedErr?.code ?? "none");
+
+const { data: doctorMedRead } = await asDoctorA.from("medicines").select("id");
+check("DOCTOR can read medicines", (doctorMedRead?.length ?? 0) > 0);
+
+const { data: frontDeskMedRead } = await asFrontDeskA.from("medicines").select("id");
+check(
+  "FRONT_DESK cannot read medicines",
+  (frontDeskMedRead?.length ?? 0) === 0,
+  `${frontDeskMedRead?.length ?? 0} row(s)`,
+);
+
+// ---------------------------------------------------------------------------
+section("Phase 3 — optical power: DOCTOR and OPTOMETRIST only");
+
+const opticalFixture = (consultationId, sph) => ({
+  clinic_id: clinicA,
+  consultation_id: consultationId,
+  patient_id: patientA,
+  date_recorded: "2030-01-07",
+  right_eye_sph: sph,
+  right_eye_add: 2.0,
+});
+
+const { error: optomOpticalErr } = await asOptometristA
+  .from("optical_power")
+  .insert(opticalFixture(ownConsultation.id, -1.25));
+check(
+  "OPTOMETRIST can record optical power",
+  !optomOpticalErr,
+  optomOpticalErr?.message ?? "",
+);
+
+const { error: frontDeskOpticalErr } = await asFrontDeskA
+  .from("optical_power")
+  .insert(opticalFixture(ownConsultation.id, -2.0));
+check(
+  "FRONT_DESK cannot record optical power",
+  Boolean(frontDeskOpticalErr),
+  frontDeskOpticalErr?.code ?? "none",
+);
+
+const { data: addStored } = await admin
+  .from("optical_power")
+  .select("right_eye_add")
+  .eq("consultation_id", ownConsultation.id)
+  .maybeSingle();
+check("ADD value persisted", Number(addStored?.right_eye_add) === 2, String(addStored?.right_eye_add));
+
+// ---------------------------------------------------------------------------
+section("Phase 3 — cross-clinic isolation");
+
+const { data: consultB } = await admin
+  .from("consultations")
+  .insert({
+    clinic_id: clinicB,
+    patient_id: patientB,
+    doctor_id: doctorB.id,
+    consultation_date: "2030-01-07",
+  })
+  .select("id")
+  .single();
+
+await admin.from("medicines").insert({ clinic_id: clinicB, name: "Clinic B Only" });
+
+const { data: bConsults } = await asDoctorA
+  .from("consultations")
+  .select("id")
+  .eq("clinic_id", clinicB);
+check("Clinic A cannot read clinic B consultations", (bConsults?.length ?? 0) === 0);
+
+const { data: bMeds } = await asDoctorA.from("medicines").select("id").eq("clinic_id", clinicB);
+check("Clinic A cannot read clinic B medicines", (bMeds?.length ?? 0) === 0);
+
+const { error: crossConsultErr } = await asDoctorA.from("consultations").insert({
+  clinic_id: clinicB,
+  patient_id: patientB,
+  doctor_id: doctorB.id,
+  consultation_date: "2030-01-09",
+});
+check(
+  "INSERT consultation into clinic B rejected",
+  Boolean(crossConsultErr),
+  crossConsultErr?.code ?? "none",
+);
+
+const { error: crossOpticalErr } = await asDoctorA.from("optical_power").insert({
+  clinic_id: clinicB,
+  consultation_id: consultB.id,
+  patient_id: patientB,
+  date_recorded: "2030-01-07",
+  right_eye_sph: -1,
+});
+check(
+  "INSERT optical power into clinic B rejected",
+  Boolean(crossOpticalErr),
+  crossOpticalErr?.code ?? "none",
+);
+
+// ---------------------------------------------------------------------------
+section("Phase 3 — prescription snapshot survives a rename");
+
+const { data: prescriptionA } = await asDoctorA
+  .from("prescriptions")
+  .insert({
+    clinic_id: clinicA,
+    consultation_id: ownConsultation.id,
+    patient_id: patientA,
+    doctor_id: doctorA.id,
+    prescription_date: "2030-01-07",
+  })
+  .select("id")
+  .single();
+
+const { error: itemErr } = await asDoctorA.from("prescription_items").insert({
+  clinic_id: clinicA,
+  prescription_id: prescriptionA.id,
+  medicine_id: medicineA.id,
+  medicine_name_snapshot: "Probe Aspirin",
+  dosage: "1 tablet",
+  frequency: "Once daily",
+});
+check("DOCTOR can add prescription items", !itemErr, itemErr?.message ?? "");
+
+// Rename the master record, then confirm history is untouched.
+await asAdminA.from("medicines").update({ name: "Renamed Aspirin" }).eq("id", medicineA.id);
+
+const { data: itemAfterRename } = await admin
+  .from("prescription_items")
+  .select("medicine_name_snapshot")
+  .eq("prescription_id", prescriptionA.id)
+  .maybeSingle();
+check(
+  "Snapshot unchanged after medicine renamed",
+  itemAfterRename?.medicine_name_snapshot === "Probe Aspirin",
+  itemAfterRename?.medicine_name_snapshot ?? "missing",
+);
+
+const { data: renamedMaster } = await admin
+  .from("medicines")
+  .select("name")
+  .eq("id", medicineA.id)
+  .maybeSingle();
+check("Medicine master did rename", renamedMaster?.name === "Renamed Aspirin", renamedMaster?.name);
+
+const { error: frontDeskItemErr } = await asFrontDeskA.from("prescription_items").insert({
+  clinic_id: clinicA,
+  prescription_id: prescriptionA.id,
+  medicine_id: medicineA.id,
+  medicine_name_snapshot: "Smuggled",
+  dosage: "1",
+  frequency: "1",
+});
+check(
+  "FRONT_DESK cannot add prescription items",
+  Boolean(frontDeskItemErr),
+  frontDeskItemErr?.code ?? "none",
+);
+
+// ---------------------------------------------------------------------------
+section("Profile — per-visit history is clinic and patient scoped");
+
+// The consultation page shows history from a patient's earlier visits. That
+// query must never reach another clinic, or another patient in the same clinic.
+const { data: priorHistory } = await asDoctorA
+  .from("consultations")
+  .select("id, clinic_id, patient_id, patient_history")
+  .not("patient_history", "is", null);
+
+check(
+  "Prior-history query stays inside own clinic",
+  (priorHistory ?? []).every((row) => row.clinic_id === clinicA),
+  `${priorHistory?.length ?? 0} row(s)`,
+);
+
+const { data: otherPatientHistory } = await asDoctorA
+  .from("consultations")
+  .select("id")
+  .eq("patient_id", patientB);
+check("Cannot read consultations of a clinic B patient", (otherPatientHistory?.length ?? 0) === 0);
+
+// ---------------------------------------------------------------------------
+section("Print settings — letterhead gap");
+
+// The whole reason this column sits on `clinics` rather than `clinic_config`:
+// DOCTORs print the letters, and clinic_config is ADMIN-only because it stores
+// credentials. If a doctor cannot read the gap, every printed letter silently
+// falls back to the default.
+const { data: doctorReadsGap } = await asDoctorA
+  .from("clinics")
+  .select("letterhead_gap_percent")
+  .eq("id", clinicA)
+  .maybeSingle();
+check(
+  "DOCTOR can read the letterhead gap (needed to print)",
+  doctorReadsGap?.letterhead_gap_percent !== undefined,
+  `${doctorReadsGap?.letterhead_gap_percent}%`,
+);
+
+const { data: adminSetGap } = await asAdminA
+  .from("clinics")
+  .update({ letterhead_gap_percent: 20 })
+  .eq("id", clinicA)
+  .select("letterhead_gap_percent");
+check("ADMIN can set own clinic's gap", Number(adminSetGap?.[0]?.letterhead_gap_percent) === 20);
+
+const { data: doctorSetGap } = await asDoctorA
+  .from("clinics")
+  .update({ letterhead_gap_percent: 45 })
+  .eq("id", clinicA)
+  .select("id");
+check("DOCTOR cannot change the gap", (doctorSetGap?.length ?? 0) === 0);
+
+const { data: crossGap } = await asAdminA
+  .from("clinics")
+  .update({ letterhead_gap_percent: 45 })
+  .eq("id", clinicB)
+  .select("id");
+check("ADMIN A cannot change clinic B's gap", (crossGap?.length ?? 0) === 0);
+
+const { error: rangeErr } = await asAdminA
+  .from("clinics")
+  .update({ letterhead_gap_percent: 80 })
+  .eq("id", clinicA);
+check("Out-of-range gap rejected", rangeErr?.code === "23514", rangeErr?.code ?? "none");
+
+// ---------------------------------------------------------------------------
 console.log("\ncleaning up…");
 for (const id of created.clinics) await admin.from("clinics").delete().eq("id", id);
 for (const id of created.users) await admin.auth.admin.deleteUser(id);

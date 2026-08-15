@@ -30,6 +30,8 @@ Supabase Dashboard → SQL Editor. Paste and run each file from
 
 1. `0001_phase1_foundation.sql`
 2. `0002_phase2_patients_appointments.sql`
+3. `0003_phase3_clinical.sql`
+4. `0004_letterhead_gap.sql`
 
 Confirm they landed:
 
@@ -38,8 +40,10 @@ SELECT tablename, rowsecurity FROM pg_tables
 WHERE schemaname = 'public' ORDER BY tablename;
 ```
 
-Expect `appointments`, `clinics`, `clinic_config`, `doctor_availability`,
-`patient_history`, `patients`, `profiles` — each with `rowsecurity = true`.
+Expect `appointments`, `clinics`, `clinic_config`, `consultations`,
+`doctor_availability`, `medicines`, `optical_power`, `patient_history`,
+`patients`, `prescription_items`, `prescriptions`, `profiles` — each with
+`rowsecurity = true`.
 
 ## 4. Seed the first SUPER_ADMIN
 
@@ -124,6 +128,13 @@ The suite does not drive the browser. These still warrant a click-through:
 | FRONT_DESK opens `/schedule` | Redirected to `/dashboard` — DOCTOR only |
 | Book outside a doctor's availability | Rejected: "The doctor is not available at that time" |
 | Book over an existing appointment | Rejected: "That slot overlaps an existing appointment" |
+| FRONT_DESK opens `/consultations/new` | Redirected to `/dashboard` — DOCTOR only |
+| DOCTOR opens `/medicines` | Redirected to `/dashboard` — ADMIN only |
+| Doctor with specialty "Ophthalmology" opens a consultation | Optical power section is shown |
+| Doctor with specialty "General Medicine" opens a consultation | Optical power section is hidden |
+| Prescribe a deactivated medicine | Rejected: "… is deactivated and cannot be prescribed" |
+| Complete a consultation, then edit it | Fields read-only; save refused |
+| Open `/consultations/[id]/print` | Letter renders with no sidebar; browser print dialog is clean |
 
 ### Via SQL, as a real user
 

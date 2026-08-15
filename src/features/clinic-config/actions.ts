@@ -63,3 +63,45 @@ export async function updateClinicConfig(
 
   return { error: null, success: true };
 }
+
+/**
+ * Updates print settings for the acting ADMIN's own clinic.
+ *
+ * These live on `clinics` rather than `clinic_config` because DOCTORs print the
+ * letters and cannot read `clinic_config`, which is restricted to ADMIN as it
+ * stores live credentials.
+ */
+export async function updatePrintSettings(
+  _prevState: ClinicConfigState,
+  formData: FormData,
+): Promise<ClinicConfigState> {
+  const profile = await requireRole(["ADMIN"]);
+  const clinicId = requireClinicId(profile);
+
+  const raw = String(formData.get("letterhead_gap_percent") ?? "").trim();
+  if (!raw) return { error: "Enter a letterhead gap.", success: false };
+
+  const percent = Number(raw);
+  if (!Number.isFinite(percent)) return { error: "Letterhead gap must be a number.", success: false };
+  if (percent < 0 || percent > 50) {
+    return { error: "Letterhead gap must be between 0 and 50 percent.", success: false };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("clinics")
+    .update({
+      letterhead_gap_percent: percent,
+      updated_at: new Date().toISOString(),
+      updated_by: profile.id,
+    })
+    .eq("id", clinicId);
+
+  if (error) {
+    return { error: `Could not save print settings: ${error.message}`, success: false };
+  }
+
+  revalidatePath("/settings");
+
+  return { error: null, success: true };
+}

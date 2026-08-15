@@ -6,6 +6,9 @@ import EventAvailableIcon from "@mui/icons-material/EventAvailable";
 import LocalHospitalIcon from "@mui/icons-material/LocalHospital";
 import LogoutIcon from "@mui/icons-material/Logout";
 import MenuIcon from "@mui/icons-material/Menu";
+import AssignmentIcon from "@mui/icons-material/Assignment";
+import MedicationIcon from "@mui/icons-material/Medication";
+import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import PeopleIcon from "@mui/icons-material/People";
 import MedicalInformationIcon from "@mui/icons-material/MedicalInformation";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -39,6 +42,9 @@ const ICONS = {
   patients: MedicalInformationIcon,
   appointments: CalendarMonthIcon,
   schedule: EventAvailableIcon,
+  consultations: AssignmentIcon,
+  medicines: MedicationIcon,
+  profile: AccountCircleIcon,
 } as const;
 
 interface AppShellProps {

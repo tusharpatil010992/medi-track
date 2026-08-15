@@ -1,9 +1,17 @@
 import Alert from "@mui/material/Alert";
 import Typography from "@mui/material/Typography";
 
+import Stack from "@mui/material/Stack";
+
+import { PrintSettingsForm } from "@/components/settings/PrintSettingsForm";
 import { requireClinicId, requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { isPlaceholder, type ClinicConfig } from "@/types/clinic";
+import {
+  DEFAULT_LETTERHEAD_GAP_PERCENT,
+  isPlaceholder,
+  type Clinic,
+  type ClinicConfig,
+} from "@/types/clinic";
 
 import { ClinicConfigForm } from "./ClinicConfigForm";
 
@@ -12,11 +20,15 @@ export default async function SettingsPage() {
   const clinicId = requireClinicId(profile);
 
   const supabase = await createClient();
-  const { data: config } = await supabase
-    .from("clinic_config")
-    .select("*")
-    .eq("clinic_id", clinicId)
-    .single<ClinicConfig>();
+
+  const [{ data: config }, { data: clinic }] = await Promise.all([
+    supabase.from("clinic_config").select("*").eq("clinic_id", clinicId).maybeSingle<ClinicConfig>(),
+    supabase
+      .from("clinics")
+      .select("letterhead_gap_percent")
+      .eq("id", clinicId)
+      .maybeSingle<Pick<Clinic, "letterhead_gap_percent">>(),
+  ]);
 
   if (!config) {
     return (
@@ -60,7 +72,14 @@ export default async function SettingsPage() {
         </Alert>
       ) : null}
 
-      <ClinicConfigForm status={status} timezone={config.timezone} />
+      <Stack spacing={3}>
+        <ClinicConfigForm status={status} timezone={config.timezone} />
+        <PrintSettingsForm
+          letterheadGapPercent={
+            clinic?.letterhead_gap_percent ?? DEFAULT_LETTERHEAD_GAP_PERCENT
+          }
+        />
+      </Stack>
     </>
   );
 }

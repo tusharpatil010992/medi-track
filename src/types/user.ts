@@ -40,6 +40,25 @@ export function canWriteClinicalData(role: UserRole): boolean {
   return (CLINICAL_WRITE_ROLES as readonly UserRole[]).includes(role);
 }
 
+/**
+ * Whether this user records optical power.
+ *
+ * True for OPTOMETRIST — measuring is their entire remit — and for a DOCTOR
+ * practising ophthalmology, who may record it themselves.
+ *
+ * `specialty` is a free-text column, so the match is deliberately loose to
+ * cover "Ophthalmology", "Ophthalmologist" and "Ophthalmic". A clinic that
+ * types something else entirely will not see the section; ADMINs need to know
+ * this field drives behaviour, which is noted in docs/database.md.
+ */
+export function recordsOpticalPower(
+  profile: Pick<Profile, "role" | "specialty">,
+): boolean {
+  if (profile.role === "OPTOMETRIST") return true;
+  if (profile.role !== "DOCTOR") return false;
+  return /ophthalm/i.test(profile.specialty ?? "");
+}
+
 export interface Profile {
   id: string;
   /** NULL for SUPER_ADMIN — a platform-level role that belongs to no clinic. */

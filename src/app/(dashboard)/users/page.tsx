@@ -13,6 +13,7 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusChip } from "@/components/common/StatusChip";
+import { ResetPasswordButton } from "@/components/users/ResetPasswordButton";
 import { requireClinicId, requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { ROLE_LABELS, type Profile } from "@/types/user";
@@ -86,7 +87,16 @@ export default async function UsersPage() {
                         You
                       </Typography>
                     ) : (
-                      <UserStatusToggle userId={user.id} isActive={user.is_active} />
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        sx={{ justifyContent: "flex-end", alignItems: "center" }}
+                      >
+                        {user.role === "ADMIN" ? null : (
+                          <ResetPasswordButton userId={user.id} fullName={user.full_name} />
+                        )}
+                        <UserStatusToggle userId={user.id} isActive={user.is_active} />
+                      </Stack>
                     )}
                   </TableCell>
                 </TableRow>

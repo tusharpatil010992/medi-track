@@ -157,6 +157,12 @@ audit_action:
 **clinics**
 - `id` (UUID, PK)
 - `name` (VARCHAR)
+- `letterhead_gap_percent` (NUMERIC, default 12.0, 0–50) — blank space reserved
+  at the top of printed letters, as a percentage of A4 page height, so content
+  clears pre-printed letterhead. 0 disables it. **Lives here, not on
+  `clinic_config`:** DOCTORs print the letters, and `clinic_config` is
+  ADMIN-only because it stores credentials. This is presentation config, not a
+  secret, so it belongs on a table every clinic member can read.
 - `email` (VARCHAR)
 - `phone` (VARCHAR)
 - `address` (TEXT)
@@ -272,7 +278,10 @@ audit_action:
 **consultations**
 - `id` (UUID, PK)
 - `clinic_id` (UUID, FK → clinics)
-- `appointment_id` (UUID, FK → appointments, UNIQUE)
+- `appointment_id` (UUID, FK → appointments, UNIQUE, **NULLABLE**) — NULL for a
+  walk-in consultation with no prior booking. Postgres treats NULLs as distinct
+  under a UNIQUE constraint, so many walk-ins coexist while a booked appointment
+  still maps to at most one consultation.
 - `patient_id` (UUID, FK → patients)
 - `doctor_id` (UUID, FK → profiles)
 - `consultation_date` (DATE)
@@ -343,11 +352,17 @@ audit_action:
 - `date_recorded` (DATE)
 - `right_eye_sph` (DECIMAL)
 - `right_eye_cyl` (DECIMAL)
-- `right_eye_axis` (INTEGER)
+- `right_eye_axis` (INTEGER, 0–180)
+- `right_eye_add` (DECIMAL) — near-vision addition
 - `left_eye_sph` (DECIMAL)
 - `left_eye_cyl` (DECIMAL)
-- `left_eye_axis` (INTEGER)
+- `left_eye_axis` (INTEGER, 0–180)
+- `left_eye_add` (DECIMAL)
 - `pupil_distance` (DECIMAL)
+
+The two ADD columns come from `plan/Mark1.md` §25 and were missing here.
+Without them a reading or bifocal prescription cannot be recorded, which rules
+out most patients with presbyopia.
 - `notes` (TEXT)
 - `created_at` (TIMESTAMP)
 - `updated_at` (TIMESTAMP)
@@ -548,6 +563,31 @@ publish their own schedule:
 AND current_user_role() = 'DOCTOR' AND doctor_id = auth.uid()
 ```
 
+Phase 3 continues the pattern: `consultations`, `prescriptions` and
+`prescription_items` are DOCTOR-write; `medicines` is ADMIN-write and readable
+only by ADMIN/DOCTOR/OPTOMETRIST; `optical_power` is writable by DOCTOR and
+OPTOMETRIST.
+
+### Where a rule cannot live in RLS
+
+The optical power section is meant to appear only for an ophthalmologist. That
+test reads `profiles.specialty`, which is **free text** and cannot be matched
+reliably inside a policy — a typo or a different wording would silently change
+who is authorised.
+
+So the rule is split deliberately:
+
+| Layer | Enforces |
+|---|---|
+| RLS | Role — only DOCTOR and OPTOMETRIST may write `optical_power` at all |
+| Server action + UI | Specialty — `recordsOpticalPower()` in `src/types/user.ts` |
+
+RLS remains the outer boundary: it stops FRONT_DESK and every other clinic
+outright. The specialty check narrows within that, and is a workflow
+convenience rather than a security boundary. **ADMINs should know that the
+`specialty` field drives this behaviour** — a doctor whose specialty does not
+mention "ophthalm" will not see the section.
+
 ### Special Policies
 
 **Profiles:** Users see profiles from their clinic; SUPER_ADMIN sees all
@@ -607,6 +647,8 @@ Supabase SQL Editor (paste and run) or `supabase db push`.
 |---|---|
 | `0001_phase1_foundation.sql` | `user_role` enum, `clinics`, `clinic_config`, `profiles`, RLS helper functions, RLS policies |
 | `0002_phase2_patients_appointments.sql` | `appointment_status` enum, `patients`, `patient_history`, `doctor_availability`, `appointments`, RLS policies |
+| `0003_phase3_clinical.sql` | `consultation_status` / `prescription_status` enums, `consultations`, `medicines`, `prescriptions`, `prescription_items`, `optical_power`, RLS policies |
+| `0004_letterhead_gap.sql` | `clinics.letterhead_gap_percent` — per-clinic print offset for pre-printed letterhead |
 
 Each phase adds its own migration rather than editing an applied one. Phase 2–5
 tables documented above are not created until their phase ships.
