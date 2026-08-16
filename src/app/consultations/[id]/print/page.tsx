@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { PrintButton } from "@/components/consultations/PrintButton";
+import { PrintButton } from "@/components/common/PrintButton";
 import { requireClinicId, requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -138,6 +138,8 @@ export default async function ConsultationPrintPage({
         </div>
         <div className={styles.right}>
           <div>Date: {consultation.consultation_date}</div>
+          {/* Matches the reference printed on the invoice for this visit. */}
+          <div className={styles.muted}>Ref: {consultation.consultation_number}</div>
           {consultation.follow_up_date ? <div>Follow-up: {consultation.follow_up_date}</div> : null}
         </div>
       </section>

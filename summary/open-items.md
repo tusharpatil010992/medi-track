@@ -4,7 +4,7 @@ Running log of things flagged during implementation and **deferred by decision
 until after the final phase**. Nothing here is blocking; each is recorded so it
 is decided deliberately rather than forgotten.
 
-Last updated: 2026-08-16 (during Phase 3)
+Last updated: 2026-08-16 (post Phase 4, after the consultation → billing amendment)
 
 ---
 
@@ -73,12 +73,16 @@ it. Kept because it is specified in `docs/database.md`; marked "reserved" in
 ---
 
 ## 6. No browser click-through has been performed
-**Raised:** Phase 1, still true through Phase 3 · **Severity:** medium
+**Raised:** Phase 1, still true through Phase 4 · **Severity:** medium
 
 Every phase has been verified by static checks plus the automated isolation
 suite against the live database. **Nobody has driven the actual screens.** The
 suite exercises RLS and server-side rules; it does not click a button, submit a
 form, or confirm the print layout renders correctly.
+
+Phase 4 widened this: the invoice and receipt layouts have never been seen
+rendered, and no notification has ever reached a real provider, since the test
+clinic runs on placeholder credentials.
 
 Manual checklist lives in `docs/setup.md`.
 
@@ -115,15 +119,103 @@ default 12%). Two loose ends remain:
 ---
 
 ## 9. Password recovery still has no self-service path
-**Raised:** Phase 3 · **Severity:** low, closes in Phase 4
+**Raised:** Phase 3 · **Severity:** low · **Still open after Phase 4**
 
-`/profile` now lets any user change their own password, and an ADMIN can issue a
-temporary one for staff in their clinic. Two gaps remain by design:
+`/profile` lets any user change their own password, and an ADMIN can issue a
+temporary one for staff in their clinic. Two gaps remain:
 
-- **No email-based "forgot password"** — needs Resend, which arrives in Phase 4.
+- **No email-based "forgot password".** This was expected to close in Phase 4
+  once Resend arrived. It did not: the notification service sends *patient*
+  messages, and password reset is a Supabase Auth flow
+  (`resetPasswordForEmail` plus a callback route), not a clinic-configured
+  Resend send. Nothing in Phase 4 required it, so it was not built. It is a
+  small, self-contained piece of work whenever it is wanted.
 - **A locked-out clinic ADMIN still needs the Supabase dashboard.** An ADMIN
   cannot reset another ADMIN (peers should not be able to seize each other's
   accounts), and SUPER_ADMIN reset was offered but not chosen.
+
+---
+
+## 10. Concurrent payments can overdraw an invoice
+**Raised:** Phase 4 · **Severity:** low today, real if two desks collect at once
+
+`recordPayment()` reads the invoice balance, checks the amount against it, then
+inserts. Two payments submitted simultaneously could both pass the check and
+together exceed the total. The stored `paid_amount` stays truthful — it is
+re-summed from the payments table rather than incremented — so the invoice would
+show a **negative balance** rather than losing money.
+
+Same shape as the double-booking race in item 1, and the same fix applies: move
+the constraint into the database, here as a deferred CHECK or a guarded update
+of `invoices.paid_amount`. Deferred as over-engineering at a single counter.
+
+*Where:* `src/features/billing/actions.ts` → `recordPayment()`
+
+---
+
+## 11. No refund path
+**Raised:** Phase 4 · **Severity:** by design, but it will come up
+
+Payments are immutable, and cancelling or voiding an invoice requires
+`paid_amount = 0`. So an invoice that was **paid in error cannot be reversed
+in the application at all** — the only routes are a correcting entry made
+outside the system, or a database edit.
+
+This is the deliberate consequence of treating money received as a historical
+fact, and no requirement asked for refunds. If a clinic needs them, the shape
+that preserves the ledger is a negative-amount payment row with its own reason,
+rather than deleting or editing the original.
+
+---
+
+## 12. APPOINTMENT_REMINDER is defined but never sent
+**Raised:** Phase 4 · **Severity:** low, needs a decision
+
+The enum value, the template and the log all exist; nothing fires them. It is
+the only notification event needing a scheduler, and Vercel Cron was explicitly
+left out of Phase 4 scope.
+
+When wanted: `/api/cron/appointment-reminders` guarded by a `CRON_SECRET`, plus
+a `vercel.json` cron entry. `docs/architecture.md` already permits Vercel
+scheduled jobs, so this needs no architectural change — only the decision and
+the deployment config.
+
+`PRESCRIPTION_ISSUED` is similarly defined but unwired, for a different reason:
+it would fire on every re-save of a prescription, which is noise.
+
+---
+
+## 13. A completed consultation can be billed more than once
+**Raised:** post-Phase 4 amendment · **Severity:** low, but it is now reachable
+
+The billing button on a consultation reads "Open invoice" once a live invoice
+exists, so the ordinary path raises exactly one. But nothing stops someone
+navigating straight to `/billing/invoices/new?consultation=<id>` and raising a
+second, and the completion gate only ever inspects the **latest** invoice for
+the visit — so an earlier unpaid one would not hold the appointment open.
+
+The clean fix is a partial unique index: at most one invoice per consultation
+whose status is not CANCELLED or VOID. That is a migration plus a decision about
+what should happen when a clinic genuinely wants to split a visit across two
+bills, so it was not made unilaterally.
+
+*Where:* `src/app/(dashboard)/billing/invoices/new/page.tsx`
+
+---
+
+## 14. Walk-in consultations have no appointment to gate
+**Raised:** post-Phase 4 amendment · **Severity:** by design, worth knowing
+
+The billing gate lives on appointment completion. A **walk-in** consultation has
+no appointment (`appointment_id` is NULL), so nothing enforces that its bill is
+settled — the consultation simply completes and the visit has no closing step.
+
+The bill is still raised the same way and still appears in billing and on the
+patient's history; what is absent is the *refusal* that stops an unpaid visit
+being marked finished, because there is no appointment to mark. If walk-ins turn
+out to be a common billing route, the gate needs a second home — most likely
+refusing to let a walk-in consultation leave IN_PROGRESS until settled, which
+reintroduces the deadlock unless the button appears earlier for walk-ins only.
 
 ---
 
@@ -141,3 +233,5 @@ temporary one for staff in their clinic. Two gaps remain by design:
 | Phase 3 runtime verification pending | 3 | Done — migration 0003 applied, 44/44 passing |
 | No way to change your own password | 3 | Done — `/profile` plus ADMIN reset, 46/46 passing |
 | Per-visit history not visible on later visits | 3 | Done — earlier entries shown date-wise, no schema change |
+| Clinic deactivation was cosmetic | post-3 | Fixed — suspends the whole clinic, 62/62 ([detail](clinic-deactivation-rule.md)) |
+| Re-invoicing a cancelled visit was a dead end | 4 | Fixed pre-release — `maybeSingle()` on a visit's invoice errored once a second existed; now takes the latest, 106/106 |

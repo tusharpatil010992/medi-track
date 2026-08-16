@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 
+import { consultationBillingBlocker } from "@/features/billing/consultation-billing";
 import { requireClinicId, requireRole } from "@/lib/auth/session";
+import { notifyPatient } from "@/lib/notifications/dispatch";
 import { createClient } from "@/lib/supabase/server";
 import {
   BLOCKING_STATUSES,
@@ -10,6 +12,7 @@ import {
   timeToMinutes,
   type AppointmentStatus,
 } from "@/types/appointment";
+import type { Profile } from "@/types/user";
 
 /** Roles permitted to write appointments. ADMIN and OPTOMETRIST are read-only. */
 const APPOINTMENT_WRITERS = ["FRONT_DESK", "DOCTOR"] as const;
@@ -27,7 +30,28 @@ export interface AppointmentFormState {
   appointmentId: string | null;
 }
 
+/** Outcome of a status change, so a refused transition can explain itself in the UI. */
+export interface StatusChangeResult {
+  error: string | null;
+}
+
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
+/** The doctor's name for a patient-facing message. Falls back to a neutral label. */
+async function doctorName(
+  supabase: SupabaseClient,
+  clinicId: string,
+  doctorId: string,
+): Promise<string> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", doctorId)
+    .eq("clinic_id", clinicId)
+    .maybeSingle<Pick<Profile, "full_name">>();
+
+  return data?.full_name ?? "your clinician";
+}
 
 interface SlotRequest {
   patientId: string;
@@ -172,6 +196,19 @@ export async function createAppointment(
     return { error: `Could not book appointment: ${error?.message}`, appointmentId: null };
   }
 
+  await notifyPatient({
+    clinicId,
+    patientId: slot.patientId,
+    event: {
+      type: "APPOINTMENT_CREATED",
+      doctorName: await doctorName(supabase, clinicId, slot.doctorId),
+      date: slot.date,
+      time: slot.time,
+    },
+    relatedEntityType: "appointment",
+    relatedEntityId: data.id,
+  });
+
   revalidatePath("/appointments");
   return { error: null, appointmentId: data.id };
 }
@@ -262,15 +299,41 @@ export async function rescheduleAppointment(
     return { error: `Could not reschedule: ${supersedeError.message}`, appointmentId: null };
   }
 
+  await notifyPatient({
+    clinicId,
+    patientId: slot.patientId,
+    event: {
+      type: "APPOINTMENT_RESCHEDULED",
+      doctorName: await doctorName(supabase, clinicId, slot.doctorId),
+      date: slot.date,
+      time: slot.time,
+    },
+    relatedEntityType: "appointment",
+    relatedEntityId: replacement.id,
+  });
+
   revalidatePath("/appointments");
   return { error: null, appointmentId: replacement.id };
 }
 
-/** Moves an appointment to a new status, refusing transitions out of terminal states. */
+/**
+ * Moves an appointment to a new status, refusing transitions out of terminal
+ * states.
+ *
+ * Completing the appointment is what closes the visit, and it carries the
+ * billing gate: the bill must be issued and the mode of payment recorded first.
+ * The gate lives here rather than on the consultation because the consultation
+ * completing is what *reveals* the billing button — gating that would deadlock.
+ *
+ * Paying less than the total is allowed and leaves the invoice PARTIALLY_PAID;
+ * a fully discounted bill needs no payment at all, its written reason standing
+ * in place of the money. An appointment with no consultation was never billed
+ * and completes freely.
+ */
 export async function setAppointmentStatus(
   appointmentId: string,
   status: AppointmentStatus,
-): Promise<void> {
+): Promise<StatusChangeResult> {
   const profile = await requireRole(APPOINTMENT_WRITERS);
   const clinicId = requireClinicId(profile);
 
@@ -278,21 +341,67 @@ export async function setAppointmentStatus(
 
   const { data: existing } = await supabase
     .from("appointments")
-    .select("status")
+    .select("status, patient_id, doctor_id, appointment_date, appointment_time")
     .eq("id", appointmentId)
     .eq("clinic_id", clinicId)
-    .maybeSingle<{ status: AppointmentStatus }>();
+    .maybeSingle<{
+      status: AppointmentStatus;
+      patient_id: string;
+      doctor_id: string;
+      appointment_date: string;
+      appointment_time: string;
+    }>();
 
-  if (!existing) throw new Error("Appointment not found");
+  if (!existing) return { error: "Appointment not found." };
   if (TERMINAL_STATUSES.includes(existing.status)) {
-    throw new Error(`A ${existing.status.toLowerCase()} appointment cannot change status`);
+    return { error: `A ${existing.status.toLowerCase()} appointment cannot change status.` };
   }
 
-  await supabase
+  if (status === "COMPLETED") {
+    const { data: consultation } = await supabase
+      .from("consultations")
+      .select("id, status")
+      .eq("appointment_id", appointmentId)
+      .eq("clinic_id", clinicId)
+      .maybeSingle<{ id: string; status: string }>();
+
+    if (consultation && consultation.status === "CANCELLED") {
+      return { error: "This visit's consultation was cancelled, so it cannot be completed." };
+    }
+
+    if (consultation && consultation.status !== "COMPLETED") {
+      return { error: "The consultation for this visit is still open. Close it first." };
+    }
+
+    if (consultation) {
+      const blocker = await consultationBillingBlocker(supabase, clinicId, consultation.id);
+      if (blocker) return { error: blocker };
+    }
+  }
+
+  const { error } = await supabase
     .from("appointments")
     .update({ status, updated_at: new Date().toISOString(), updated_by: profile.id })
     .eq("id", appointmentId)
     .eq("clinic_id", clinicId);
 
+  if (error) return { error: `Could not update appointment: ${error.message}` };
+
+  if (status === "CANCELLED") {
+    await notifyPatient({
+      clinicId,
+      patientId: existing.patient_id,
+      event: {
+        type: "APPOINTMENT_CANCELLED",
+        doctorName: await doctorName(supabase, clinicId, existing.doctor_id),
+        date: existing.appointment_date,
+        time: existing.appointment_time,
+      },
+      relatedEntityType: "appointment",
+      relatedEntityId: appointmentId,
+    });
+  }
+
   revalidatePath("/appointments");
+  return { error: null };
 }

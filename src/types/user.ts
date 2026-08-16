@@ -41,6 +41,35 @@ export function canWriteClinicalData(role: UserRole): boolean {
 }
 
 /**
+ * Roles that may see billing at all.
+ *
+ * OPTOMETRIST and STAFF are excluded: neither charges nor collects, and
+ * invoices carry the clinic's revenue. RLS in migration 0006 enforces this
+ * independently.
+ */
+export const BILLING_ROLES = [
+  "ADMIN",
+  "DOCTOR",
+  "FRONT_DESK",
+] as const satisfies readonly UserRole[];
+
+/**
+ * Roles that may raise an invoice and take a payment.
+ *
+ * ADMIN is deliberately absent. It maintains the price list and reads every
+ * billing record, but does not transact — a separation of duties between who
+ * sets prices and who collects money.
+ */
+export const BILLING_WRITE_ROLES = [
+  "DOCTOR",
+  "FRONT_DESK",
+] as const satisfies readonly UserRole[];
+
+export function canRecordBilling(role: UserRole): boolean {
+  return (BILLING_WRITE_ROLES as readonly UserRole[]).includes(role);
+}
+
+/**
  * Whether this user records optical power.
  *
  * True for OPTOMETRIST — measuring is their entire remit — and for a DOCTOR

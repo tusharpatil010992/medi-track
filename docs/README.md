@@ -80,7 +80,12 @@ docs/
 └── development-rules.md         # Frontend and coding rules
 
 supabase/migrations/             # One migration per phase, applied in order
-└── 0001_phase1_foundation.sql
+├── 0001_phase1_foundation.sql
+├── 0002_phase2_patients_appointments.sql
+├── 0003_phase3_clinical.sql
+├── 0004_letterhead_gap.sql
+├── 0005_clinic_deactivation.sql
+└── 0006_phase4_billing_notifications.sql
 ```
 
 ---
@@ -332,7 +337,7 @@ A: Test cross-clinic access in Supabase SQL Editor as different users.
 
 ## Last Updated
 
-2026-08-15
+2026-08-16 — Phases 1–4 delivered; Phase 5 not started.
 
 ---
 

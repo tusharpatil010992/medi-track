@@ -11,6 +11,7 @@ import MedicationIcon from "@mui/icons-material/Medication";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import PeopleIcon from "@mui/icons-material/People";
 import MedicalInformationIcon from "@mui/icons-material/MedicalInformation";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
@@ -44,6 +45,7 @@ const ICONS = {
   schedule: EventAvailableIcon,
   consultations: AssignmentIcon,
   medicines: MedicationIcon,
+  billing: ReceiptLongIcon,
   profile: AccountCircleIcon,
 } as const;
 

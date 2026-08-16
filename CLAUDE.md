@@ -502,6 +502,39 @@ ALTER TABLE patients ADD COLUMN favorite_color VARCHAR;
 // - Migration: docs/database.md pattern ✓
 ```
 
+### Version Control
+
+🔀 **Rule 12: Never commit or push unless explicitly asked**
+
+Finishing a task means the working tree is ready — **not** committed. Stop there
+and report what changed. Wait for the user to ask.
+
+This holds even when the work is complete, tested, documented and obviously
+correct. "It was ready" is not a reason to commit it.
+
+```bash
+# ❌ WRONG — task finished, so commit and push
+npm run type-check && git commit -m "..." && git push
+
+# ✅ RIGHT — finish, verify, report, stop
+npm run type-check
+# then: "Done. 3 files changed, tests passing. Commit?"
+```
+
+**Asked** means the user said so for *this* change — "commit this", "push it",
+"commit phase 4". It does not carry over:
+
+- A previous commit they requested does not authorise the next one
+- "Implement X" is a request to implement X, not to commit it
+- "Fix the docs" is a request to fix the docs, not to publish them
+
+Pushing deserves particular care: it is outward-facing, publishes to a remote
+others may pull, and cannot be cleanly undone. Never push without being asked,
+and never `--force` without explicit instruction naming that consequence.
+
+Before any commit you *have* been asked for, still scan the staged diff for
+secrets — see the credential rules in `docs/setup.md`.
+
 ---
 
 ## Development Checklist
@@ -526,6 +559,7 @@ ALTER TABLE patients ADD COLUMN favorite_color VARCHAR;
 - [ ] Code is readable (would junior dev understand?)
 - [ ] No over-engineering
 - [ ] Vercel-compatible
+- [ ] **Not committed or pushed** unless explicitly asked (Rule 12)
 
 ---
 
@@ -603,6 +637,11 @@ clinicBalance -= invoice.amount;
    - "Can I add dark mode theme selector?"
    - "Should I implement this nice-to-have feature?"
 
+6. **Committing or pushing anything**
+   - "The work is done and tested — shall I commit it?"
+   - "Ready to push to origin?"
+   - Never assume finishing a task implies permission to commit it (Rule 12)
+
 ---
 
 ## File You'll Edit Most
@@ -657,7 +696,7 @@ DONE ✓
 | 1 | Foundation, multi-tenancy, clinic users | ✅ Complete — schema applied, tenant isolation verified 10/10 ([summary](./summary/phase1_implementation.md)) |
 | 2 | Patients, doctors, appointments | ✅ Complete — 24/24 isolation tests ([summary](./summary/phase2_implementation.md)) |
 | 3 | Consultations, medicines, printing | ✅ Complete — 44/44 isolation tests ([summary](./summary/phase3_implementation.md)) |
-| 4 | Billing, notifications | Not started |
+| 4 | Billing, notifications | ✅ Complete — 119/119 isolation tests ([summary](./summary/phase4_implementation.md)) |
 | 5 | Documents, audit, production readiness | Not started |
 
 ---
@@ -672,6 +711,6 @@ Don't build for "what if". Build for "what is".
 
 ---
 
-**Last Updated:** 2026-08-15  
+**Last Updated:** 2026-08-16  
 **Project:** Medi-Track  
 **For:** AI Assistants & Developers

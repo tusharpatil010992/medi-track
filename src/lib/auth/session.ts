@@ -10,8 +10,13 @@ import type { Profile, UserRole } from "@/types/user";
  * read from the database here — never from a request body, query string, form
  * field or cookie supplied by the browser.
  *
- * Returns null when signed out, when no profile row exists, or when the
- * account has been deactivated.
+ * Returns null when signed out, when no profile row exists, when the account
+ * has been deactivated, or when the user's whole clinic has been suspended.
+ *
+ * The clinic check applies to live sessions, not only to sign-in: a user who is
+ * already signed in when their clinic is deactivated loses access on their next
+ * request. RLS enforces the same boundary independently — see
+ * get_user_clinic_id() in migration 0005.
  */
 export async function getCurrentProfile(): Promise<Profile | null> {
   const supabase = await createClient();
@@ -24,13 +29,17 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single<Profile>();
+  // Issued together: the clinic check does not depend on the profile, so it
+  // costs concurrency rather than latency on this hot path.
+  const [{ data: profile }, { data: clinicActive }] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", user.id).single<Profile>(),
+    supabase.rpc("current_user_clinic_is_active"),
+  ]);
 
   if (!profile || !profile.is_active) return null;
+
+  // TRUE for SUPER_ADMIN, who belongs to no clinic and is never suspended here.
+  if (clinicActive === false) return null;
 
   return profile;
 }

@@ -3,6 +3,7 @@ import Typography from "@mui/material/Typography";
 
 import Stack from "@mui/material/Stack";
 
+import { NotificationLog } from "@/components/settings/NotificationLog";
 import { PrintSettingsForm } from "@/components/settings/PrintSettingsForm";
 import { requireClinicId, requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
@@ -79,6 +80,7 @@ export default async function SettingsPage() {
             clinic?.letterhead_gap_percent ?? DEFAULT_LETTERHEAD_GAP_PERCENT
           }
         />
+        <NotificationLog clinicId={clinicId} />
       </Stack>
     </>
   );

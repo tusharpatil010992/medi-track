@@ -91,6 +91,12 @@ async function makePatient(clinicId, number, first, last) {
   return data.id;
 }
 
+// consultation_number is NOT NULL and unique per clinic (migration 0007), so
+// every fixture insert needs its own. The 9000 range keeps these clear of the
+// C-0001 sequence the application allocates.
+let consultSeq = 9000;
+const nextConsultRef = () => `C-${(consultSeq += 1)}`;
+
 console.log("setting up fixtures…");
 
 const clinicA = await makeClinic("Isolation Test Clinic A");
@@ -120,6 +126,25 @@ const asFrontDeskA = await sessionFor(frontDeskA);
 const asDoctorA = await sessionFor(doctorA);
 const asOptometristA = await sessionFor(optometristA);
 const asDoctorB = await sessionFor(doctorB);
+
+// Preflight: consultation_number (migration 0007) is mandatory and every Phase 3
+// fixture supplies it. Without the column the run collapses somewhere in the
+// middle with a null-dereference rather than saying what is actually wrong, so
+// stop here — after tearing the fixtures down.
+const { error: refProbe } = await admin.from("consultations").select("consultation_number").limit(1);
+
+if (refProbe) {
+  console.log("\n--- Consultation references — MISSING ---");
+  console.log("  consultations.consultation_number is absent.");
+  console.log("  Apply supabase/migrations/0007_consultation_number.sql");
+  console.log("  (Supabase Dashboard → SQL Editor → paste → Run), then re-run this suite.");
+  console.log(`  Reported: ${refProbe.code ?? ""} ${refProbe.message ?? ""}`.trim());
+
+  console.log("\ncleaning up…");
+  for (const id of created.clinics) await admin.from("clinics").delete().eq("id", id);
+  for (const id of created.users) await admin.auth.admin.deleteUser(id);
+  process.exit(1);
+}
 
 // ---------------------------------------------------------------------------
 section("Phase 1 — clinic, config and profile isolation");
@@ -335,50 +360,54 @@ check(
 // ---------------------------------------------------------------------------
 section("Phase 3 — consultations are DOCTOR-only");
 
-const consultationFixture = {
+// A fresh object each time: the reference is unique per clinic, so reusing one
+// literal across four inserts would confuse an RLS refusal with a duplicate key.
+const consultationFixture = () => ({
   clinic_id: clinicA,
+  consultation_number: nextConsultRef(),
   patient_id: patientA,
   doctor_id: doctorA.id,
   consultation_date: "2030-01-07",
-};
+});
 
 const { data: ownConsultation, error: doctorConsultErr } = await asDoctorA
   .from("consultations")
-  .insert(consultationFixture)
+  .insert(consultationFixture())
   .select("id")
   .single();
 check("DOCTOR can open a consultation", !doctorConsultErr, doctorConsultErr?.message ?? "");
 
 const { error: frontDeskConsultErr } = await asFrontDeskA
   .from("consultations")
-  .insert(consultationFixture);
+  .insert(consultationFixture());
 check(
   "FRONT_DESK cannot open a consultation",
-  Boolean(frontDeskConsultErr),
+  frontDeskConsultErr?.code === "42501",
   frontDeskConsultErr?.code ?? "none",
 );
 
 const { error: adminConsultErr } = await asAdminA
   .from("consultations")
-  .insert(consultationFixture);
+  .insert(consultationFixture());
 check(
   "ADMIN cannot open a consultation",
-  Boolean(adminConsultErr),
+  adminConsultErr?.code === "42501",
   adminConsultErr?.code ?? "none",
 );
 
 const { error: optomConsultErr } = await asOptometristA
   .from("consultations")
-  .insert(consultationFixture);
+  .insert(consultationFixture());
 check(
   "OPTOMETRIST cannot open a consultation",
-  Boolean(optomConsultErr),
+  optomConsultErr?.code === "42501",
   optomConsultErr?.code ?? "none",
 );
 
 // Walk-in: appointment_id omitted entirely.
 const { error: walkInErr } = await asDoctorA.from("consultations").insert({
   clinic_id: clinicA,
+  consultation_number: nextConsultRef(),
   patient_id: patientA,
   doctor_id: doctorA.id,
   consultation_date: "2030-01-08",
@@ -454,6 +483,7 @@ const { data: consultB } = await admin
   .from("consultations")
   .insert({
     clinic_id: clinicB,
+    consultation_number: nextConsultRef(),
     patient_id: patientB,
     doctor_id: doctorB.id,
     consultation_date: "2030-01-07",
@@ -474,6 +504,7 @@ check("Clinic A cannot read clinic B medicines", (bMeds?.length ?? 0) === 0);
 
 const { error: crossConsultErr } = await asDoctorA.from("consultations").insert({
   clinic_id: clinicB,
+  consultation_number: nextConsultRef(),
   patient_id: patientB,
   doctor_id: doctorB.id,
   consultation_date: "2030-01-09",
@@ -623,6 +654,567 @@ const { error: rangeErr } = await asAdminA
   .update({ letterhead_gap_percent: 80 })
   .eq("id", clinicA);
 check("Out-of-range gap rejected", rangeErr?.code === "23514", rangeErr?.code ?? "none");
+
+// ---------------------------------------------------------------------------
+// Phase 4 tables are probed first. Without migration 0006 every billing check
+// would fail with PGRST205 ("table not found"), which reads like a broken
+// policy rather than a migration that has not been run — the same trap Phase 2
+// hit from the other direction.
+const { error: phase4Probe } = await admin.from("billing_services").select("id").limit(1);
+const phase4Ready = phase4Probe?.code !== "PGRST205";
+
+async function runPhase4DatabaseTests() {
+section("Phase 4 — billing services are ADMIN-managed");
+
+const { data: createdService, error: serviceErr } = await asAdminA
+  .from("billing_services")
+  .insert({ clinic_id: clinicA, name: "Probe Consultation", price: 500 })
+  .select("id")
+  .single();
+check("ADMIN can add a billing service", Boolean(createdService), serviceErr?.code ?? "");
+
+const { error: doctorService } = await asDoctorA
+  .from("billing_services")
+  .insert({ clinic_id: clinicA, name: "Doctor Priced", price: 100 });
+check("DOCTOR cannot add a service", doctorService?.code === "42501", doctorService?.code ?? "none");
+
+const { error: deskService } = await asFrontDeskA
+  .from("billing_services")
+  .insert({ clinic_id: clinicA, name: "Desk Priced", price: 100 });
+check("FRONT_DESK cannot add a service", deskService?.code === "42501", deskService?.code ?? "none");
+
+const { data: doctorReadsServices } = await asDoctorA.from("billing_services").select("id");
+check("DOCTOR can read the price list", (doctorReadsServices?.length ?? 0) > 0);
+
+const { data: optomServices } = await asOptometristA.from("billing_services").select("id");
+check("OPTOMETRIST reads no services", (optomServices?.length ?? 0) === 0);
+
+// ---------------------------------------------------------------------------
+section("Phase 4 — invoices and payments are DOCTOR/FRONT_DESK");
+
+async function invoicePayload(clinicId, patientId, number, total) {
+  return {
+    clinic_id: clinicId,
+    patient_id: patientId,
+    invoice_number: number,
+    invoice_date: new Date().toISOString().slice(0, 10),
+    status: "ISSUED",
+    subtotal: total,
+    total_amount: total,
+    balance_amount: total,
+  };
+}
+
+const { data: deskInvoice, error: deskInvoiceErr } = await asFrontDeskA
+  .from("invoices")
+  .insert(await invoicePayload(clinicA, patientA, "INV-9001", 500))
+  .select("id")
+  .single();
+check("FRONT_DESK can raise an invoice", Boolean(deskInvoice), deskInvoiceErr?.code ?? "");
+
+const { data: doctorInvoice, error: doctorInvoiceErr } = await asDoctorA
+  .from("invoices")
+  .insert(await invoicePayload(clinicA, patientA, "INV-9002", 800))
+  .select("id")
+  .single();
+check("DOCTOR can raise an invoice", Boolean(doctorInvoice), doctorInvoiceErr?.code ?? "");
+
+const { error: adminInvoice } = await asAdminA
+  .from("invoices")
+  .insert(await invoicePayload(clinicA, patientA, "INV-9003", 100));
+check(
+  "ADMIN cannot raise an invoice (separation of duties)",
+  adminInvoice?.code === "42501",
+  adminInvoice?.code ?? "none",
+);
+
+const { data: adminReadsInvoices } = await asAdminA.from("invoices").select("id");
+check("ADMIN can still read invoices", (adminReadsInvoices?.length ?? 0) > 0);
+
+const { data: optomInvoices } = await asOptometristA.from("invoices").select("id");
+check("OPTOMETRIST reads no invoices", (optomInvoices?.length ?? 0) === 0);
+
+const { error: deskPayment } = await asFrontDeskA.from("payments").insert({
+  clinic_id: clinicA,
+  invoice_id: deskInvoice.id,
+  payment_date: new Date().toISOString().slice(0, 10),
+  amount: 200,
+  method: "CASH",
+});
+check("FRONT_DESK can take a payment", !deskPayment, deskPayment?.code ?? "");
+
+const { error: adminPayment } = await asAdminA.from("payments").insert({
+  clinic_id: clinicA,
+  invoice_id: deskInvoice.id,
+  payment_date: new Date().toISOString().slice(0, 10),
+  amount: 50,
+  method: "CASH",
+});
+check("ADMIN cannot take a payment", adminPayment?.code === "42501", adminPayment?.code ?? "none");
+
+// Money received is a historical fact: there is no UPDATE policy, so an attempt
+// silently matches nothing rather than rewriting the ledger.
+const { data: alteredPayment } = await asFrontDeskA
+  .from("payments")
+  .update({ amount: 9999 })
+  .eq("invoice_id", deskInvoice.id)
+  .select("id");
+check("Payments cannot be altered after the fact", (alteredPayment?.length ?? 0) === 0);
+
+// ---------------------------------------------------------------------------
+section("Phase 4 — cross-clinic billing isolation");
+
+const { data: bSeesInvoices } = await asDoctorB.from("invoices").select("id").eq("clinic_id", clinicA);
+check("DOCTOR B reads no clinic A invoices", (bSeesInvoices?.length ?? 0) === 0);
+
+const { error: bWritesInvoice } = await asDoctorB
+  .from("invoices")
+  .insert(await invoicePayload(clinicA, patientA, "INV-9099", 100));
+check(
+  "DOCTOR B cannot raise an invoice in clinic A",
+  Boolean(bWritesInvoice),
+  bWritesInvoice?.code ?? "none",
+);
+
+const { data: bSeesPayments } = await asDoctorB.from("payments").select("id").eq("clinic_id", clinicA);
+check("DOCTOR B reads no clinic A payments", (bSeesPayments?.length ?? 0) === 0);
+
+const { data: bSeesServices } = await asDoctorB
+  .from("billing_services")
+  .select("id")
+  .eq("clinic_id", clinicA);
+check("DOCTOR B reads no clinic A services", (bSeesServices?.length ?? 0) === 0);
+
+// ---------------------------------------------------------------------------
+section("Phase 4 — billing integrity rules");
+
+// A discount must always carry a written justification. This is the rule that
+// makes a 100%-waived "family visit" auditable rather than unexplained.
+const { error: silentDiscount } = await asFrontDeskA.from("invoices").insert({
+  ...(await invoicePayload(clinicA, patientA, "INV-9004", 0)),
+  discount_amount: 500,
+});
+check(
+  "Discount without a reason rejected",
+  silentDiscount?.code === "23514",
+  silentDiscount?.code ?? "none",
+);
+
+const { error: explainedDiscount } = await asFrontDeskA.from("invoices").insert({
+  ...(await invoicePayload(clinicA, patientA, "INV-9005", 0)),
+  discount_amount: 500,
+  discount_reason: "Family visit — waived",
+});
+check("Discount with a reason accepted", !explainedDiscount, explainedDiscount?.code ?? "");
+
+const { error: negativePayment } = await asFrontDeskA.from("payments").insert({
+  clinic_id: clinicA,
+  invoice_id: deskInvoice.id,
+  payment_date: new Date().toISOString().slice(0, 10),
+  amount: -100,
+  method: "CASH",
+});
+check(
+  "Negative payment rejected",
+  negativePayment?.code === "23514",
+  negativePayment?.code ?? "none",
+);
+
+const { error: duplicateNumber } = await asFrontDeskA
+  .from("invoices")
+  .insert(await invoicePayload(clinicA, patientA, "INV-9001", 500));
+check(
+  "Duplicate invoice number rejected within a clinic",
+  duplicateNumber?.code === "23505",
+  duplicateNumber?.code ?? "none",
+);
+
+// The same number in another clinic must be fine — invoice numbers are
+// clinic-scoped, exactly like patient numbers.
+const { error: sameNumberElsewhere } = await asDoctorB
+  .from("invoices")
+  .insert(await invoicePayload(clinicB, patientB, "INV-9001", 500));
+check("Same invoice number allowed in another clinic", !sameNumberElsewhere, sameNumberElsewhere?.code ?? "");
+
+// The snapshot property, repeated for billing: renaming a service must not
+// rewrite what a past invoice says the patient was charged for.
+await asFrontDeskA.from("invoice_items").insert({
+  clinic_id: clinicA,
+  invoice_id: deskInvoice.id,
+  service_id: createdService.id,
+  description: "Probe Consultation",
+  quantity: 1,
+  unit_price: 500,
+  amount: 500,
+});
+
+await asAdminA
+  .from("billing_services")
+  .update({ name: "Renamed Consultation" })
+  .eq("id", createdService.id);
+
+const { data: snapshotItem } = await asFrontDeskA
+  .from("invoice_items")
+  .select("description, service_id")
+  .eq("invoice_id", deskInvoice.id)
+  .maybeSingle();
+check(
+  "Invoice line keeps the service name it was billed under",
+  snapshotItem?.description === "Probe Consultation",
+  snapshotItem?.description ?? "missing",
+);
+check(
+  "Invoice line still links back to the service for reporting",
+  snapshotItem?.service_id === createdService.id,
+);
+
+// A visit whose first bill was cancelled gets a second one. Both rows coexist,
+// so anything reading "the invoice for this consultation" must ask for the
+// latest rather than assume a single row.
+const { data: consultForBilling } = await asDoctorA
+  .from("consultations")
+  .select("id")
+  .eq("clinic_id", clinicA)
+  .limit(1)
+  .maybeSingle();
+
+if (consultForBilling) {
+  await asDoctorA.from("invoices").insert({
+    ...(await invoicePayload(clinicA, patientA, "INV-9010", 300)),
+    consultation_id: consultForBilling.id,
+    status: "CANCELLED",
+  });
+  const { error: reInvoice } = await asDoctorA.from("invoices").insert({
+    ...(await invoicePayload(clinicA, patientA, "INV-9011", 300)),
+    consultation_id: consultForBilling.id,
+  });
+  check("A cancelled visit can be re-invoiced", !reInvoice, reInvoice?.code ?? "");
+
+  const { data: latest } = await asDoctorA
+    .from("invoices")
+    .select("invoice_number")
+    .eq("consultation_id", consultForBilling.id)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  check(
+    "The live bill for a visit is the latest one",
+    latest?.[0]?.invoice_number === "INV-9011",
+    latest?.[0]?.invoice_number ?? "none",
+  );
+}
+
+// ---------------------------------------------------------------------------
+section("Consultation reference — invoices are traceable to a visit");
+
+const { data: refConsult } = await asDoctorA
+  .from("consultations")
+  .insert({
+    clinic_id: clinicA,
+    consultation_number: "C-9500",
+    patient_id: patientA,
+    doctor_id: doctorA.id,
+    consultation_date: "2030-02-01",
+  })
+  .select("id, consultation_number")
+  .single();
+check("Consultation carries a clinic-facing reference", refConsult?.consultation_number === "C-9500");
+
+const { error: missingRef } = await asDoctorA.from("consultations").insert({
+  clinic_id: clinicA,
+  patient_id: patientA,
+  doctor_id: doctorA.id,
+  consultation_date: "2030-02-02",
+});
+check(
+  "A consultation cannot exist without a reference",
+  missingRef?.code === "23502",
+  missingRef?.code ?? "none",
+);
+
+const { error: dupeRef } = await asDoctorA.from("consultations").insert({
+  clinic_id: clinicA,
+  consultation_number: "C-9500",
+  patient_id: patientA,
+  doctor_id: doctorA.id,
+  consultation_date: "2030-02-03",
+});
+check(
+  "Duplicate reference rejected within a clinic",
+  dupeRef?.code === "23505",
+  dupeRef?.code ?? "none",
+);
+
+// Clinic-scoped like patient and invoice numbers: two clinics may both hold one.
+const { error: refElsewhere } = await asDoctorB.from("consultations").insert({
+  clinic_id: clinicB,
+  consultation_number: "C-9500",
+  patient_id: patientB,
+  doctor_id: doctorB.id,
+  consultation_date: "2030-02-01",
+});
+check("Same reference allowed in another clinic", !refElsewhere, refElsewhere?.code ?? "");
+
+// The join the billing list and the printed invoice both rely on.
+await asDoctorA.from("invoices").insert({
+  ...(await invoicePayload(clinicA, patientA, "INV-9020", 400)),
+  consultation_id: refConsult.id,
+});
+
+const { data: tracedInvoice } = await asFrontDeskA
+  .from("invoices")
+  .select("invoice_number, consultations(consultation_number)")
+  .eq("invoice_number", "INV-9020")
+  .maybeSingle();
+check(
+  "An invoice resolves back to its consultation reference",
+  tracedInvoice?.consultations?.consultation_number === "C-9500",
+  tracedInvoice?.consultations?.consultation_number ?? "missing",
+);
+
+const { data: bTraced } = await asDoctorB
+  .from("invoices")
+  .select("id, consultations(consultation_number)")
+  .eq("invoice_number", "INV-9020");
+check("Clinic B cannot traverse to clinic A's consultation", (bTraced?.length ?? 0) === 0);
+
+// Deactivating a service must not remove it from history.
+await asAdminA.from("billing_services").update({ is_active: false }).eq("id", createdService.id);
+const { data: afterDeactivation } = await asFrontDeskA
+  .from("invoice_items")
+  .select("description")
+  .eq("invoice_id", deskInvoice.id);
+check(
+  "Deactivated service stays on the historical invoice",
+  (afterDeactivation?.length ?? 0) === 1,
+);
+
+// ---------------------------------------------------------------------------
+section("Phase 4 — notification log");
+
+await admin.from("notifications").insert({
+  clinic_id: clinicA,
+  recipient_email: "probe@isolation-test.local",
+  notification_type: "APPOINTMENT_CREATED",
+  channel: "EMAIL",
+  subject: "Probe",
+  body: "Probe body",
+  delivery_status: "SKIPPED",
+});
+
+const { data: adminNotifications } = await asAdminA.from("notifications").select("id");
+check("ADMIN can read the notification log", (adminNotifications?.length ?? 0) > 0);
+
+const { data: doctorNotifications } = await asDoctorA.from("notifications").select("id");
+check("DOCTOR reads no notifications", (doctorNotifications?.length ?? 0) === 0);
+
+const { data: deskNotifications } = await asFrontDeskA.from("notifications").select("id");
+check("FRONT_DESK reads no notifications", (deskNotifications?.length ?? 0) === 0);
+
+// No INSERT policy exists at all: delivery records are written only by the
+// server-side service, so no signed-in user can forge one.
+const { error: forgedNotification } = await asAdminA.from("notifications").insert({
+  clinic_id: clinicA,
+  notification_type: "OTHER",
+  channel: "EMAIL",
+  body: "Forged",
+});
+check(
+  "Nobody can forge a delivery record",
+  forgedNotification?.code === "42501",
+  forgedNotification?.code ?? "none",
+);
+
+const { data: bNotifications } = await asDoctorB.from("notifications").select("id");
+check("Clinic B sees none of clinic A's notifications", (bNotifications?.length ?? 0) === 0);
+}
+
+if (phase4Ready) {
+  await runPhase4DatabaseTests();
+} else {
+  section("Phase 4 — SKIPPED");
+  console.log("  Billing tables are absent. Apply supabase/migrations/0006_phase4_billing_notifications.sql");
+  console.log("  (Supabase Dashboard → SQL Editor → paste → Run), then re-run this suite.");
+  fail += 1;
+}
+
+// ---------------------------------------------------------------------------
+// Arithmetic needs no database, so it runs whether or not 0006 is applied.
+section("Phase 4 — invoice arithmetic");
+
+// These numbers are what a patient actually pays, so they are asserted directly
+// against the pure function the server uses rather than only through the UI.
+const { billingBlockerFor, computeInvoiceTotals, settlesConsultation, statusAfterPayment } =
+  await import("../src/types/billing.ts");
+
+const simple = computeInvoiceTotals([{ quantity: 2, unitPrice: 250 }], 0, 0, 0);
+check(
+  "Two lines at 250 total 500",
+  simple.subtotal === 500 && simple.totalAmount === 500 && simple.balanceAmount === 500,
+  JSON.stringify(simple),
+);
+
+const taxed = computeInvoiceTotals([{ quantity: 1, unitPrice: 1000 }], 180, 200, 500);
+check(
+  "Tax and discount applied, balance net of payment",
+  taxed.totalAmount === 980 && taxed.balanceAmount === 480,
+  JSON.stringify(taxed),
+);
+
+// Float arithmetic must not leave a residue that stops an invoice reaching PAID.
+const fiddly = computeInvoiceTotals([{ quantity: 3, unitPrice: 0.1 }], 0, 0, 0.3);
+check("Rounding leaves no residual balance", fiddly.balanceAmount === 0, JSON.stringify(fiddly));
+
+const overDiscounted = computeInvoiceTotals([{ quantity: 1, unitPrice: 500 }], 0, 900, 0);
+check("Discount beyond the bill floors the total at zero", overDiscounted.totalAmount === 0);
+
+check("Full settlement marks PAID", statusAfterPayment(500, 500) === "PAID");
+check("Short settlement marks PARTIALLY_PAID", statusAfterPayment(500, 200) === "PARTIALLY_PAID");
+
+check(
+  "A part-paid invoice lets the visit close",
+  settlesConsultation({ status: "PARTIALLY_PAID", total_amount: 500, paid_amount: 200 }),
+);
+check(
+  "A fully waived invoice closes without any payment",
+  settlesConsultation({ status: "ISSUED", total_amount: 0, paid_amount: 0 }),
+);
+check(
+  "An issued but unpaid invoice does not close the visit",
+  !settlesConsultation({ status: "ISSUED", total_amount: 500, paid_amount: 0 }),
+);
+check(
+  "A draft invoice never closes the visit",
+  !settlesConsultation({ status: "DRAFT", total_amount: 500, paid_amount: 500 }),
+);
+
+// ---------------------------------------------------------------------------
+section("The gate on completing a visit");
+
+// The gate now runs when the APPOINTMENT is completed, not the consultation:
+// completing the consultation is what reveals the billing button, so gating
+// that would leave the bill impossible to raise. These assert the decision the
+// appointment action defers to.
+check(
+  "No invoice at all blocks the visit",
+  billingBlockerFor(null)?.startsWith("Raise the invoice") === true,
+  billingBlockerFor(null) ?? "null",
+);
+check(
+  "A draft invoice blocks the visit",
+  billingBlockerFor({ status: "DRAFT", total_amount: 500, paid_amount: 0 })?.includes("draft") ===
+    true,
+);
+check(
+  "An issued but unpaid invoice blocks the visit",
+  billingBlockerFor({ status: "ISSUED", total_amount: 500, paid_amount: 0 })?.includes("mode") ===
+    true,
+);
+check(
+  "A cancelled invoice blocks the visit and asks for a new one",
+  billingBlockerFor({ status: "CANCELLED", total_amount: 500, paid_amount: 0 })?.includes(
+    "Raise a new one",
+  ) === true,
+);
+check(
+  "A part-paid invoice releases the visit",
+  billingBlockerFor({ status: "PARTIALLY_PAID", total_amount: 500, paid_amount: 200 }) === null,
+);
+check(
+  "A fully waived invoice releases the visit with no payment",
+  billingBlockerFor({ status: "ISSUED", total_amount: 0, paid_amount: 0 }) === null,
+);
+check(
+  "A fully paid invoice releases the visit",
+  billingBlockerFor({ status: "PAID", total_amount: 500, paid_amount: 500 }) === null,
+);
+
+// ---------------------------------------------------------------------------
+section("Clinic deactivation suspends the whole clinic");
+
+// Baseline: clinic A is active and its staff can work.
+const { data: beforePatients } = await asFrontDeskA.from("patients").select("id");
+check("Before: FRONT_DESK reads patients", (beforePatients?.length ?? 0) > 0);
+
+await admin.from("clinics").update({ is_active: false }).eq("id", clinicA);
+
+// Existing sessions must lose access too, not just future sign-ins.
+const { data: afterPatients } = await asFrontDeskA.from("patients").select("id");
+check(
+  "After: existing session reads no patients",
+  (afterPatients?.length ?? 0) === 0,
+  `${afterPatients?.length ?? 0} row(s)`,
+);
+
+const { error: afterWrite } = await asFrontDeskA.from("patients").insert({
+  clinic_id: clinicA,
+  patient_number: `S-${randomBytes(3).toString("hex")}`,
+  first_name: "Suspended",
+  last_name: "Write",
+});
+check("After: writes rejected", Boolean(afterWrite), afterWrite?.code ?? "none");
+
+const { data: afterConsults } = await asDoctorA.from("consultations").select("id");
+check("After: DOCTOR reads no consultations", (afterConsults?.length ?? 0) === 0);
+
+// Phase 4 tables inherit suspension for free: every policy resolves tenancy
+// through get_user_clinic_id(), which returns NULL for a suspended clinic.
+const { data: afterInvoices } = await asFrontDeskA.from("invoices").select("id");
+check("After: FRONT_DESK reads no invoices", (afterInvoices?.length ?? 0) === 0);
+
+const { data: afterNotifications } = await asAdminA.from("notifications").select("id");
+check("After: ADMIN reads no notification log", (afterNotifications?.length ?? 0) === 0);
+
+// A suspended ADMIN still resolves their OWN profile row: profiles_select
+// grants `id = auth.uid()` first, deliberately, or session bootstrap could
+// never load anyone — including SUPER_ADMIN, whose clinic_id is NULL. What must
+// be gone is everyone else's.
+const { data: adminSeesOthers } = await asAdminA
+  .from("profiles")
+  .select("id")
+  .neq("id", adminA.id);
+check(
+  "After: clinic's own ADMIN cannot see other users",
+  (adminSeesOthers?.length ?? 0) === 0,
+  `${adminSeesOthers?.length ?? 0} row(s)`,
+);
+
+const { data: adminSeesPatients } = await asAdminA.from("patients").select("id");
+check("After: clinic's own ADMIN reads no patients", (adminSeesPatients?.length ?? 0) === 0);
+
+const { data: adminFlag } = await asAdminA.rpc("current_user_clinic_is_active");
+check("After: clinic's own ADMIN is refused by the app layer", adminFlag === false);
+
+// A fresh sign-in must be refused by the application layer.
+const freshClient = createClient(URL, ANON, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+await freshClient.auth.signInWithPassword({ email: frontDeskA.email, password: frontDeskA.password });
+const { data: freshFlag } = await freshClient.rpc("current_user_clinic_is_active");
+check("After: clinic-active check reports false on fresh sign-in", freshFlag === false, String(freshFlag));
+
+// SUPER_ADMIN must remain able to undo this, or deactivation is irreversible.
+const { data: superSees } = await admin.from("clinics").select("id, is_active").eq("id", clinicA).maybeSingle();
+check("After: clinic still visible to platform level", superSees?.is_active === false);
+
+await admin.from("clinics").update({ is_active: true }).eq("id", clinicA);
+
+const { data: reactivated } = await asFrontDeskA.from("patients").select("id");
+check(
+  "Reactivation restores access immediately",
+  (reactivated?.length ?? 0) > 0,
+  `${reactivated?.length ?? 0} row(s)`,
+);
+
+// Individually deactivated users must NOT be silently switched back on.
+await admin.from("profiles").update({ is_active: false }).eq("id", doctorA2.id);
+await admin.from("clinics").update({ is_active: false }).eq("id", clinicA);
+await admin.from("clinics").update({ is_active: true }).eq("id", clinicA);
+const { data: stillOff } = await admin
+  .from("profiles")
+  .select("is_active")
+  .eq("id", doctorA2.id)
+  .maybeSingle();
+check("Reactivation does not revive individually disabled users", stillOff?.is_active === false);
 
 // ---------------------------------------------------------------------------
 console.log("\ncleaning up…");
