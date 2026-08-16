@@ -3,7 +3,8 @@
 Multi-tenant clinic management. One Next.js application serving many clinics,
 with per-clinic data isolation enforced in the database.
 
-**Status:** Phases 1–3 of 5 complete — foundation, patients and appointments, and the clinical workflow.
+**Status:** Phases 1–4 of 5 complete — foundation, patients and appointments, the
+clinical workflow, and billing with notifications.
 
 ---
 
@@ -55,6 +56,7 @@ tenant-isolation tests — is in **[docs/setup.md](docs/setup.md)**.
 | [summary/phase1_implementation.md](summary/phase1_implementation.md) | Phase 1 report and verification results |
 | [summary/phase2_implementation.md](summary/phase2_implementation.md) | Phase 2 report and verification results |
 | [summary/phase3_implementation.md](summary/phase3_implementation.md) | Phase 3 report and verification results |
+| [summary/phase4_implementation.md](summary/phase4_implementation.md) | Phase 4 report, and the consultation → billing amendment |
 | [summary/open-items.md](summary/open-items.md) | Deferred items awaiting decision |
 | [summary/clinic-deactivation-rule.md](summary/clinic-deactivation-rule.md) | What suspending a clinic does, and why |
 
@@ -65,7 +67,7 @@ tenant-isolation tests — is in **[docs/setup.md](docs/setup.md)**.
 | 1 | Foundation, multi-tenancy, clinic users | ✅ Complete |
 | 2 | Patients, doctors, appointments | ✅ Complete |
 | 3 | Consultations, medicines, printing | ✅ Complete |
-| 4 | Billing, notifications | Not started |
+| 4 | Billing, notifications | ✅ Complete — 119/119 isolation tests |
 | 5 | Documents, audit, production readiness | Not started |
 
 ## Scripts

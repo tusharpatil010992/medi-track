@@ -73,12 +73,16 @@ it. Kept because it is specified in `docs/database.md`; marked "reserved" in
 ---
 
 ## 6. No browser click-through has been performed
-**Raised:** Phase 1, still true through Phase 3 · **Severity:** medium
+**Raised:** Phase 1, still true through Phase 4 · **Severity:** medium
 
 Every phase has been verified by static checks plus the automated isolation
 suite against the live database. **Nobody has driven the actual screens.** The
 suite exercises RLS and server-side rules; it does not click a button, submit a
 form, or confirm the print layout renders correctly.
+
+Phase 4 widened this: the invoice and receipt layouts have never been seen
+rendered, and no notification has ever reached a real provider, since the test
+clinic runs on placeholder credentials.
 
 Manual checklist lives in `docs/setup.md`.
 
