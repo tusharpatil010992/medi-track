@@ -80,7 +80,8 @@ export default async function ConsultationsPage() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Date</TableCell>
+                <TableCell>Reference</TableCell>
+                <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Date</TableCell>
                 <TableCell>Patient</TableCell>
                 <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Diagnosis</TableCell>
                 <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Type</TableCell>
@@ -95,8 +96,11 @@ export default async function ConsultationsPage() {
                   <TableRow key={consultation.id} hover>
                     <TableCell>
                       <Link href={`/consultations/${consultation.id}`}>
-                        {consultation.consultation_date}
+                        {consultation.consultation_number}
                       </Link>
+                    </TableCell>
+                    <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
+                      {consultation.consultation_date}
                     </TableCell>
                     <TableCell>
                       {patient

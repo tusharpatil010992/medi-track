@@ -9,6 +9,7 @@ import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { PatientBillingHistory } from "@/components/billing/PatientBillingHistory";
 import { StatusChip } from "@/components/common/StatusChip";
 import { PatientStatusToggle } from "@/components/patients/PatientStatusToggle";
 import { requireClinicId, requireRole } from "@/lib/auth/session";
@@ -159,6 +160,8 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
           )}
         </CardContent>
       </Card>
+
+      <PatientBillingHistory patientId={patient.id} clinicId={clinicId} role={profile.role} />
 
       <Paper variant="outlined" sx={{ p: 3 }}>
         <Typography variant="h4" component="h2" gutterBottom>

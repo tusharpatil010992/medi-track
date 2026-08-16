@@ -9,6 +9,7 @@ import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ConsultationBilling } from "@/components/billing/ConsultationBilling";
 import { ConsultationDetailsForm } from "@/components/consultations/ConsultationDetailsForm";
 import { ConsultationStatusActions } from "@/components/consultations/ConsultationStatusActions";
 import { OpticalPowerForm } from "@/components/consultations/OpticalPowerForm";
@@ -125,6 +126,8 @@ export default async function ConsultationPage({ params }: { params: Promise<{ i
                 {patient.gender ? ` · ${patient.gender}` : ""}
               </Typography>
             ) : null}
+            {/* The reference an invoice cites, so it is visible where it is quoted from. */}
+            <Chip size="small" variant="outlined" label={consultation.consultation_number} />
             <Chip size="small" label={CONSULTATION_STATUS_LABELS[consultation.status]} />
             <Chip
               size="small"
@@ -186,6 +189,14 @@ export default async function ConsultationPage({ params }: { params: Promise<{ i
           readOnly={!canEditClinical}
         />
       ) : null}
+
+      <ConsultationBilling
+        consultationId={consultation.id}
+        consultationNumber={consultation.consultation_number}
+        clinicId={clinicId}
+        role={profile.role}
+        consultationCompleted={consultation.status === "COMPLETED"}
+      />
 
       {profile.role !== "DOCTOR" && items && items.length > 0 ? (
         <Card>

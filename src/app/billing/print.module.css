@@ -1,0 +1,188 @@
+/*
+ * Print stylesheet shared by the invoice and the payment receipt.
+ *
+ * Plain CSS rather than MUI's sx for the same reason as the consultation
+ * letter: printed output must be predictable and free of theme-driven colour.
+ * Values are fixed on purpose — paper is not responsive and must not shift with
+ * light or dark mode.
+ */
+
+.sheet {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  background: #ffffff;
+  color: #000000;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/*
+ * Reserved space for the clinic's pre-printed letterhead, using the same
+ * per-clinic percentage as the consultation letter so both documents line up on
+ * the same stationery. Outlined on screen, invisible in print with only the
+ * height retained.
+ */
+.letterheadSpace {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #cccccc;
+  margin-bottom: 16px;
+}
+
+.letterheadHint {
+  font-size: 11px;
+  color: #999999;
+  letter-spacing: 0.04em;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #cccccc;
+  margin-bottom: 16px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.right {
+  text-align: right;
+}
+
+.muted {
+  color: #555555;
+  font-size: 12px;
+}
+
+.section {
+  margin-bottom: 16px;
+  break-inside: avoid;
+}
+
+.sectionTitle {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+}
+
+.table th,
+.table td {
+  border: 1px solid #999999;
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.table th {
+  background: #f0f0f0;
+  font-weight: 600;
+}
+
+.numeric {
+  text-align: right;
+}
+
+.totals {
+  margin-top: 12px;
+  margin-left: auto;
+  width: 260px;
+}
+
+.totalsRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.totalsGrand {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  margin-top: 4px;
+  border-top: 1px solid #000000;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+/* A waived or reduced charge always prints its justification alongside it. */
+.discountReason {
+  font-size: 11px;
+  color: #555555;
+  margin-top: 2px;
+}
+
+.stamp {
+  margin-top: 24px;
+  padding: 8px 12px;
+  border: 1px solid #000000;
+  display: inline-block;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.footer {
+  margin-top: 48px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  break-inside: avoid;
+}
+
+.signature {
+  text-align: center;
+  min-width: 220px;
+}
+
+.signatureLine {
+  border-top: 1px solid #000000;
+  margin-bottom: 6px;
+  height: 40px;
+}
+
+.noPrint {
+  margin-bottom: 16px;
+  text-align: right;
+}
+
+@media print {
+  .noPrint {
+    display: none;
+  }
+
+  .sheet {
+    max-width: none;
+    padding: 0;
+    font-size: 12px;
+  }
+
+  .letterheadSpace {
+    border: none;
+  }
+
+  .letterheadHint {
+    display: none;
+  }
+
+  @page {
+    margin: 16mm;
+  }
+}

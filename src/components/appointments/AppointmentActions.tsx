@@ -4,6 +4,8 @@ import MoreVertIcon from "@mui/icons-material/MoreVert";
 import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
+import Snackbar from "@mui/material/Snackbar";
+import Alert from "@mui/material/Alert";
 import { useState, useTransition } from "react";
 
 import { setAppointmentStatus } from "@/features/appointments/actions";
@@ -35,6 +37,7 @@ export function AppointmentActions({
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const options = NEXT_STATUSES[status];
   if (options.length === 0) return null;
@@ -55,13 +58,28 @@ export function AppointmentActions({
             key={next}
             onClick={() => {
               setAnchorEl(null);
-              startTransition(() => setAppointmentStatus(appointmentId, next));
+              startTransition(async () => {
+                const result = await setAppointmentStatus(appointmentId, next);
+                setError(result.error);
+              });
             }}
           >
             Mark {APPOINTMENT_STATUS_LABELS[next].toLowerCase()}
           </MenuItem>
         ))}
       </Menu>
+
+      {/* A refused transition is usually the billing gate on completing a visit. */}
+      <Snackbar
+        open={Boolean(error)}
+        autoHideDuration={6000}
+        onClose={() => setError(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="warning" onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      </Snackbar>
     </>
   );
 }

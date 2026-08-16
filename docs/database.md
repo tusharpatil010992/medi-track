@@ -278,6 +278,13 @@ audit_action:
 **consultations**
 - `id` (UUID, PK)
 - `clinic_id` (UUID, FK → clinics)
+- `consultation_number` (VARCHAR, NOT NULL) — clinic-facing reference (`C-0001`),
+  allocated in application code. Unique **per clinic**, so two clinics may both
+  hold a `C-0001`. Added in migration 0007 so an invoice can cite the visit it
+  came from in a form a human can act on: the bare UUID is useless on a printed
+  bill. Printed on both the consultation letter and the invoice, and searchable
+  from the billing list.
+- UNIQUE(`clinic_id`, `consultation_number`)
 - `appointment_id` (UUID, FK → appointments, UNIQUE, **NULLABLE**) — NULL for a
   walk-in consultation with no prior booking. Postgres treats NULLs as distinct
   under a UNIQUE constraint, so many walk-ins coexist while a booked appointment
@@ -375,12 +382,16 @@ out most patients with presbyopia.
 - `clinic_id` (UUID, FK → clinics)
 - `name` (VARCHAR)
 - `description` (TEXT)
-- `price` (DECIMAL)
+- `price` (DECIMAL, CHECK ≥ 0)
 - `is_active` (BOOLEAN, default: TRUE)
 - `created_at` (TIMESTAMP)
 - `updated_at` (TIMESTAMP)
 - `created_by` (UUID)
 - `updated_by` (UUID)
+
+`plan/Mark1.md` §744 sketches this table with `default_amount` and `tax_rate`
+instead. The `price` shape above is what shipped, matching `plan/schema.sql`;
+tax is held once per invoice rather than per service.
 
 **invoices**
 - `id` (UUID, PK)
@@ -394,6 +405,7 @@ out most patients with presbyopia.
 - `subtotal` (DECIMAL)
 - `tax_amount` (DECIMAL, default: 0)
 - `discount_amount` (DECIMAL, default: 0)
+- `discount_reason` (TEXT) — **why** the discount was given, in free text
 - `total_amount` (DECIMAL)
 - `paid_amount` (DECIMAL, default: 0)
 - `balance_amount` (DECIMAL)
@@ -404,28 +416,52 @@ out most patients with presbyopia.
 - `created_by` (UUID)
 - `updated_by` (UUID)
 - UNIQUE(`clinic_id`, `invoice_number`)
+- CHECK `discount_amount = 0 OR discount_reason IS NOT NULL`
+
+`discount_reason` was added in Phase 4 on instruction: a reduced or waived
+charge must always carry a written justification, and the CHECK makes that
+unskippable rather than merely a rule in the form. It is what makes a 100%
+"family visit" waiver auditable — and it is the mechanism that lets a zero-total
+invoice satisfy the completion gate with no payment row at all.
+
+Every monetary column is written by the server from recomputed values.
+`computeInvoiceTotals()` in `src/types/billing.ts` is the only place the
+arithmetic lives; client-submitted totals are ignored.
 
 **invoice_items**
 - `id` (UUID, PK)
 - `clinic_id` (UUID, FK → clinics)
 - `invoice_id` (UUID, FK → invoices)
-- `description` (VARCHAR)
-- `quantity` (INTEGER, default: 1)
+- `service_id` (UUID, FK → billing_services, ON DELETE SET NULL)
+- `description` (VARCHAR) — the service's name at the moment it was billed
+- `quantity` (INTEGER, default: 1, CHECK > 0)
 - `unit_price` (DECIMAL)
 - `amount` (DECIMAL)
 - `created_at` (TIMESTAMP)
+
+`service_id` was added in Phase 4 alongside `description`, mirroring
+`prescription_items.medicine_id` + `medicine_name_snapshot`: the description is
+the snapshot and must never change when the price list is edited, while the FK
+preserves the link needed to report revenue by service.
 
 **payments**
 - `id` (UUID, PK)
 - `clinic_id` (UUID, FK → clinics)
 - `invoice_id` (UUID, FK → invoices)
 - `payment_date` (DATE)
-- `amount` (DECIMAL)
+- `amount` (DECIMAL, CHECK > 0)
 - `method` (payment_method)
 - `reference_number` (VARCHAR)
 - `notes` (TEXT)
 - `created_at` (TIMESTAMP)
 - `created_by` (UUID)
+
+One row per tender, not per invoice: a patient settling ₹1,500 as ₹1,000 cash
+plus ₹500 card produces two rows, which is why the method lives here.
+
+Payments are **immutable**. There is no UPDATE or DELETE policy — money received
+is a historical fact, and an invoice raised in error is cancelled rather than
+having its ledger rewritten.
 
 **notifications**
 - `id` (UUID, PK)
@@ -438,10 +474,19 @@ out most patients with presbyopia.
 - `body` (TEXT)
 - `related_entity_type` (VARCHAR)
 - `related_entity_id` (UUID)
+- `provider_message_id` (VARCHAR) — the id Resend or WhatsApp returned
 - `sent_at` (TIMESTAMP, default: CURRENT_TIMESTAMP)
 - `delivery_status` (VARCHAR, default: 'PENDING')
 - `error_message` (TEXT)
 - `created_at` (TIMESTAMP)
+
+`provider_message_id` was added in Phase 4: without it a `SENT` row cannot be
+traced back to the provider when a patient reports a message never arrived.
+
+`delivery_status` carries a fourth value beyond the documented
+PENDING/SENT/FAILED — **SKIPPED**, meaning the clinic is still on placeholder
+credentials so nothing was attempted. Recording those as FAILED would bury the
+real failures under noise.
 
 ### Phase 5: Documents, Audit & Security
 
@@ -576,6 +621,69 @@ Phase 3 continues the pattern: `consultations`, `prescriptions` and
 only by ADMIN/DOCTOR/OPTOMETRIST; `optical_power` is writable by DOCTOR and
 OPTOMETRIST.
 
+### Billing: a separation of duties
+
+Phase 4 splits billing so that the role setting prices is not the role taking
+money:
+
+| Table | SELECT | INSERT / UPDATE |
+|---|---|---|
+| `billing_services` | ADMIN, DOCTOR, FRONT_DESK | **ADMIN** |
+| `invoices`, `invoice_items` | ADMIN, DOCTOR, FRONT_DESK | **DOCTOR, FRONT_DESK** |
+| `payments` | ADMIN, DOCTOR, FRONT_DESK | **DOCTOR, FRONT_DESK** (insert only) |
+| `notifications` | **ADMIN** | **nobody** |
+
+ADMIN maintains the price list and can review every invoice, but cannot raise
+one or record a payment. OPTOMETRIST and STAFF have no billing access at all.
+This is enforced in the database, not by hiding buttons: the isolation suite
+asserts ADMIN is refused with `42501` on both an invoice insert and a payment
+insert.
+
+`notifications` has **no INSERT policy whatsoever**, so no signed-in user can
+forge or alter a delivery record. Rows are written only by the server-side
+notification service. Read is ADMIN-only because the rows carry patients' names,
+email addresses and phone numbers in plain text.
+
+### Where the billing gate lives, and why not in RLS
+
+A visit cannot be closed until the money is accounted for. That rule spans two
+tables and depends on a *sum* of payments, which no `WITH CHECK` expression can
+express usefully, so it is enforced in the server action rather than in a
+policy:
+
+| Layer | Enforces |
+|---|---|
+| RLS | Who may write invoices and payments at all |
+| `setAppointmentStatus()` | The gate — bill issued, payment and mode recorded |
+
+The gate runs when the **appointment** is completed, not the consultation.
+Completing the consultation is what reveals the billing button, so gating that
+would deadlock: the bill could never be raised in the first place. Completing a
+consultation therefore no longer completes its appointment either — the visit
+stays open until the patient has settled at the desk.
+
+The decision itself is `billingBlockerFor()` in `src/types/billing.ts`, kept
+pure and separate from the query that finds the invoice so its branches and
+wording are directly asserted by the verification suite.
+
+### Where the notification service bypasses RLS
+
+`src/lib/notifications/dispatch.ts` reads `clinic_config` with the
+**service-role key**, bypassing RLS. This is deliberate and worth understanding:
+
+`clinic_config` is ADMIN-readable only, because it stores live Resend and
+WhatsApp credentials. But the people who trigger notifications are FRONT_DESK
+booking an appointment and DOCTOR taking a payment — neither can read it. Either
+the credentials get exposed clinic-wide, or the send path runs above RLS. The
+second is safer.
+
+The tenancy that RLS would have applied is therefore applied by hand: every
+query in that module filters on the `clinic_id` passed in, and that value always
+originates from the caller's authenticated server-side profile — never from a
+request body. Because RLS is bypassed there, those explicit filters are the only
+boundary left, which is exactly the standing rule for
+`createAdminClient()`.
+
 ### Clinic deactivation
 
 SUPER_ADMIN can suspend a clinic by setting `clinics.is_active = FALSE`. Because
@@ -686,8 +794,10 @@ Supabase SQL Editor (paste and run) or `supabase db push`.
 | `0003_phase3_clinical.sql` | `consultation_status` / `prescription_status` enums, `consultations`, `medicines`, `prescriptions`, `prescription_items`, `optical_power`, RLS policies |
 | `0004_letterhead_gap.sql` | `clinics.letterhead_gap_percent` — per-clinic print offset for pre-printed letterhead |
 | `0005_clinic_deactivation.sql` | Gates `get_user_clinic_id()` on clinic active state; adds `current_user_clinic_is_active()` |
+| `0006_phase4_billing_notifications.sql` | `invoice_status` / `payment_method` / `notification_type` / `notification_channel` enums, `billing_services`, `invoices`, `invoice_items`, `payments`, `notifications`, RLS policies |
+| `0007_consultation_number.sql` | `consultations.consultation_number` — clinic-facing visit reference, backfilled for existing rows then made mandatory |
 
-Each phase adds its own migration rather than editing an applied one. Phase 2–5
+Each phase adds its own migration rather than editing an applied one. Phase 5
 tables documented above are not created until their phase ships.
 
 ### Step 2b: Seed the first SUPER_ADMIN
