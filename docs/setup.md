@@ -33,6 +33,8 @@ Supabase Dashboard → SQL Editor. Paste and run each file from
 3. `0003_phase3_clinical.sql`
 4. `0004_letterhead_gap.sql`
 5. `0005_clinic_deactivation.sql`
+6. `0006_phase4_billing_notifications.sql`
+7. `0007_consultation_number.sql`
 
 Confirm they landed:
 
@@ -41,9 +43,10 @@ SELECT tablename, rowsecurity FROM pg_tables
 WHERE schemaname = 'public' ORDER BY tablename;
 ```
 
-Expect `appointments`, `clinics`, `clinic_config`, `consultations`,
-`doctor_availability`, `medicines`, `optical_power`, `patient_history`,
-`patients`, `prescription_items`, `prescriptions`, `profiles` — each with
+Expect `appointments`, `billing_services`, `clinics`, `clinic_config`,
+`consultations`, `doctor_availability`, `invoices`, `invoice_items`,
+`medicines`, `notifications`, `optical_power`, `patient_history`, `patients`,
+`payments`, `prescription_items`, `prescriptions`, `profiles` — each with
 `rowsecurity = true`.
 
 ## 4. Seed the first SUPER_ADMIN
@@ -105,7 +108,15 @@ which bypasses RLS and would prove nothing), asserts the boundaries, then
 removes every fixture it created.
 
 It covers cross-clinic reads and writes, role write restrictions, availability
-ownership, appointment integrity, and per-clinic `patient_number` uniqueness.
+ownership, appointment integrity, per-clinic `patient_number` and
+`invoice_number` uniqueness, the billing separation of duties, and the invoice
+arithmetic itself.
+
+Phase 4 checks are **skipped with a clear message** rather than failing
+obscurely if migration 0006 has not been applied — a missing table reports as
+`PGRST205`, which reads like a broken policy if you are not expecting it. A
+missing migration 0007 stops the run outright at a preflight check, since every
+consultation fixture depends on that column.
 
 **Re-run it at the end of every phase**, not just the phase that added a table —
 each new clinic-owned table inherits these policy patterns, so a regression in
@@ -138,6 +149,30 @@ The suite does not drive the browser. These still warrant a click-through:
 | Open `/consultations/[id]/print` | Letter renders with no sidebar; browser print dialog is clean |
 | SUPER_ADMIN deactivates a clinic, then its ADMIN signs in | Rejected: "This clinic is currently suspended" |
 | A user of that clinic already signed in | Loses access on next request, redirected to `/login` |
+| DOCTOR or FRONT_DESK opens `/billing/services` | Redirected to `/dashboard` — ADMIN only |
+| ADMIN opens `/billing` | Sees every invoice, with a note that raising and collecting is not theirs |
+| ADMIN opens an invoice | No Issue, Cancel or Record payment controls |
+| OPTOMETRIST opens `/billing` | Redirected to `/dashboard` |
+| Complete a consultation | Always allowed — clinical sign-off is not gated on billing |
+| …and its appointment afterwards | Stays **In progress**; it is not auto-completed any more |
+| Open a consultation still in progress | Billing card shows "Complete the consultation to raise the invoice" — no button |
+| Complete the consultation | **Raise invoice** button appears on the billing card |
+| Click Raise invoice | Lands on `/billing/invoices/new?consultation=…` with the patient and visit prefilled |
+| Visit `/billing/invoices/new?consultation=…` for an open consultation | Refused with a link back to the consultation |
+| Mark the appointment complete with no invoice | Refused: "Raise the invoice for this visit before completing it" |
+| …with the invoice still a draft | Refused: "…still a draft. Issue it before completing the visit" |
+| …with an issued but unpaid invoice | Refused: "Record the payment and its mode…" |
+| Record a part payment, then complete the appointment | Allowed; invoice sits at **Partially paid** |
+| Apply a 100% discount with a reason, issue, then complete the appointment | Allowed with no payment recorded |
+| Search billing for `C-0001` | Returns the invoices raised from that consultation |
+| Print an invoice raised from a consultation | Header carries `Consultation C-0001 · <date>` |
+| Apply a discount and leave the reason blank | Refused by the form *and* by the database CHECK |
+| Record a payment larger than the balance | Refused: "That is more than the outstanding balance" |
+| Split a bill across cash and card | Two payment rows; each prints its own receipt |
+| Mark an appointment complete while its consultation is open | Refused: "The consultation for this visit is still open. Close it first." |
+| Open `/billing/invoices/[id]/print` and `/billing/payments/[id]/receipt` | Render with no sidebar; letterhead gap matches the consultation letter |
+| ADMIN opens Clinic Settings with placeholder credentials | Notification log shows recent messages as **Not configured** |
+| ADMIN enters a real Resend key, then books an appointment | Log shows **Sent**; a bad key shows **Failed** with the provider's reason |
 | SUPER_ADMIN reactivates the clinic | Access restored; individually disabled users stay disabled |
 
 ### Via SQL, as a real user

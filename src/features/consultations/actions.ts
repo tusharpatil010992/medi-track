@@ -3,12 +3,46 @@
 import { revalidatePath } from "next/cache";
 
 import { requireClinicId, requireRole } from "@/lib/auth/session";
+import { notifyPatient } from "@/lib/notifications/dispatch";
 import { createClient } from "@/lib/supabase/server";
 import { isConsultationEditable, type Consultation, type ConsultationStatus } from "@/types/clinical";
 
 export interface ConsultationFormState {
   error: string | null;
   consultationId: string | null;
+}
+
+/** Outcome of a status change, so a refused transition can explain itself in the UI. */
+export interface StatusChangeResult {
+  error: string | null;
+}
+
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Allocates the next clinic-scoped consultation reference.
+ *
+ * Same approach as patient and invoice numbers: read the highest, add one, and
+ * let the UNIQUE(clinic_id, consultation_number) constraint plus a retry settle
+ * a race between two doctors opening a visit at the same moment.
+ */
+async function nextConsultationNumber(
+  supabase: SupabaseClient,
+  clinicId: string,
+): Promise<string> {
+  const { data } = await supabase
+    .from("consultations")
+    .select("consultation_number")
+    .eq("clinic_id", clinicId)
+    .like("consultation_number", "C-%")
+    .order("consultation_number", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ consultation_number: string }>();
+
+  const highest = data ? Number(data.consultation_number.replace("C-", "")) : 0;
+  const next = Number.isFinite(highest) ? highest + 1 : 1;
+
+  return `C-${String(next).padStart(4, "0")}`;
 }
 
 /**
@@ -69,41 +103,52 @@ export async function createConsultation(
     }
   }
 
-  const { data, error } = await supabase
-    .from("consultations")
-    .insert({
-      clinic_id: clinicId,
-      appointment_id: appointmentId,
-      patient_id: patientId,
-      doctor_id: profile.id,
-      consultation_date: new Date().toISOString().slice(0, 10),
-      status: "IN_PROGRESS",
-      created_by: profile.id,
-      updated_by: profile.id,
-    })
-    .select("id")
-    .single<{ id: string }>();
+  // Retry covers two doctors opening a consultation at the same moment.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const consultationNumber = await nextConsultationNumber(supabase, clinicId);
 
-  if (error || !data) {
-    return { error: `Could not open consultation: ${error?.message}`, consultationId: null };
-  }
-
-  // Move the appointment along so the day view reflects that the patient is
-  // now with the clinician.
-  if (appointmentId) {
-    await supabase
-      .from("appointments")
-      .update({
+    const { data, error } = await supabase
+      .from("consultations")
+      .insert({
+        clinic_id: clinicId,
+        consultation_number: consultationNumber,
+        appointment_id: appointmentId,
+        patient_id: patientId,
+        doctor_id: profile.id,
+        consultation_date: new Date().toISOString().slice(0, 10),
         status: "IN_PROGRESS",
-        updated_at: new Date().toISOString(),
+        created_by: profile.id,
         updated_by: profile.id,
       })
-      .eq("id", appointmentId)
-      .eq("clinic_id", clinicId);
+      .select("id")
+      .single<{ id: string }>();
+
+    if (!error && data) {
+      // Move the appointment along so the day view reflects that the patient is
+      // now with the clinician.
+      if (appointmentId) {
+        await supabase
+          .from("appointments")
+          .update({
+            status: "IN_PROGRESS",
+            updated_at: new Date().toISOString(),
+            updated_by: profile.id,
+          })
+          .eq("id", appointmentId)
+          .eq("clinic_id", clinicId);
+      }
+
+      revalidatePath("/consultations");
+      return { error: null, consultationId: data.id };
+    }
+
+    // 23505 = unique_violation on the consultation number. Nothing else retries.
+    if (error?.code !== "23505") {
+      return { error: `Could not open consultation: ${error?.message}`, consultationId: null };
+    }
   }
 
-  revalidatePath("/consultations");
-  return { error: null, consultationId: data.id };
+  return { error: "Could not allocate a consultation number. Please try again.", consultationId: null };
 }
 
 export async function updateConsultation(
@@ -160,13 +205,22 @@ export async function updateConsultation(
 /**
  * Moves a consultation through its lifecycle.
  *
- * Completing one also completes its appointment, so the day view does not leave
- * a finished patient sitting in progress.
+ * Completing marks the end of the *clinical* work only, and is not gated on
+ * billing — the billing button appears once this succeeds, so gating here would
+ * deadlock: the bill could never be raised.
+ *
+ * It deliberately no longer completes the attached appointment either. The
+ * visit is not over until the patient has settled at the desk, so the
+ * appointment stays IN_PROGRESS and carries the billing gate itself. See
+ * setAppointmentStatus().
+ *
+ * Returns the reason instead of throwing, so a refusal reads as a message
+ * rather than an error page.
  */
 export async function setConsultationStatus(
   consultationId: string,
   status: ConsultationStatus,
-): Promise<void> {
+): Promise<StatusChangeResult> {
   const profile = await requireRole(["DOCTOR"]);
   const clinicId = requireClinicId(profile);
 
@@ -174,34 +228,41 @@ export async function setConsultationStatus(
 
   const { data: existing } = await supabase
     .from("consultations")
-    .select("id, status, appointment_id")
+    .select("id, status, patient_id, follow_up_date")
     .eq("id", consultationId)
     .eq("clinic_id", clinicId)
-    .maybeSingle<Pick<Consultation, "id" | "status" | "appointment_id">>();
+    .maybeSingle<Pick<Consultation, "id" | "status" | "patient_id" | "follow_up_date">>();
 
-  if (!existing) throw new Error("Consultation not found");
+  if (!existing) return { error: "Consultation not found." };
   if (!isConsultationEditable(existing.status)) {
-    throw new Error(`A ${existing.status.toLowerCase()} consultation cannot change status`);
+    return { error: `A ${existing.status.toLowerCase()} consultation cannot change status.` };
   }
 
-  await supabase
+  const { error } = await supabase
     .from("consultations")
     .update({ status, updated_at: new Date().toISOString(), updated_by: profile.id })
     .eq("id", consultationId)
     .eq("clinic_id", clinicId);
 
-  if (status === "COMPLETED" && existing.appointment_id) {
-    await supabase
-      .from("appointments")
-      .update({
-        status: "COMPLETED",
-        updated_at: new Date().toISOString(),
-        updated_by: profile.id,
-      })
-      .eq("id", existing.appointment_id)
-      .eq("clinic_id", clinicId);
+  if (error) return { error: `Could not update consultation: ${error.message}` };
+
+  if (status === "COMPLETED") {
+    await notifyPatient({
+      clinicId,
+      patientId: existing.patient_id,
+      event: {
+        type: "CONSULTATION_COMPLETED",
+        doctorName: profile.full_name,
+        followUpDate: existing.follow_up_date,
+      },
+      relatedEntityType: "consultation",
+      relatedEntityId: consultationId,
+    });
   }
 
   revalidatePath("/consultations");
   revalidatePath(`/consultations/${consultationId}`);
+  revalidatePath("/appointments");
+
+  return { error: null };
 }

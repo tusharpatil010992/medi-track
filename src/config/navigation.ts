@@ -14,6 +14,7 @@ export interface NavItem {
     | "schedule"
     | "consultations"
     | "medicines"
+    | "billing"
     | "profile";
 }
 
@@ -23,8 +24,7 @@ export interface NavItem {
  * UI only — hiding a link is not authorisation. Every page independently
  * re-checks the role server-side via requireRole().
  *
- * Lists only routes that exist. Consultations, medicines and billing links are
- * added by their own phases.
+ * Lists only routes that exist. Each phase adds its own links.
  */
 const DASHBOARD: NavItem = { label: "Dashboard", href: "/dashboard", icon: "dashboard" };
 const PATIENTS: NavItem = { label: "Patients", href: "/patients", icon: "patients" };
@@ -39,6 +39,7 @@ const CONSULTATIONS: NavItem = {
   href: "/consultations",
   icon: "consultations",
 };
+const BILLING: NavItem = { label: "Billing", href: "/billing", icon: "billing" };
 
 export const NAVIGATION: Record<UserRole, NavItem[]> = {
   SUPER_ADMIN: [DASHBOARD, { label: "Clinics", href: "/clinics", icon: "clinics" }, PROFILE],
@@ -47,7 +48,9 @@ export const NAVIGATION: Record<UserRole, NavItem[]> = {
     PATIENTS,
     APPOINTMENTS,
     CONSULTATIONS,
+    BILLING,
     { label: "Medicines", href: "/medicines", icon: "medicines" },
+    { label: "Billing Services", href: "/billing/services", icon: "billing" },
     { label: "Users", href: "/users", icon: "users" },
     { label: "Clinic Settings", href: "/settings", icon: "settings" },
     PROFILE,
@@ -57,11 +60,12 @@ export const NAVIGATION: Record<UserRole, NavItem[]> = {
     PATIENTS,
     APPOINTMENTS,
     CONSULTATIONS,
+    BILLING,
     { label: "My Schedule", href: "/schedule", icon: "schedule" },
     PROFILE,
   ],
   OPTOMETRIST: [DASHBOARD, PATIENTS, APPOINTMENTS, CONSULTATIONS, PROFILE],
   STAFF: [DASHBOARD, PROFILE],
-  FRONT_DESK: [DASHBOARD, PATIENTS, APPOINTMENTS, CONSULTATIONS, PROFILE],
+  FRONT_DESK: [DASHBOARD, PATIENTS, APPOINTMENTS, CONSULTATIONS, BILLING, PROFILE],
   PATIENT: [DASHBOARD, PROFILE],
 };

@@ -99,6 +99,8 @@ Appointment confirmed
 
 ### Consultation Module
 - Consultation page (`/consultations/[id]`)
+- Clinic-facing reference per visit (`C-0001`, unique per clinic) — cited by any
+  invoice raised from the visit, and printed on both documents
 - Conditional sections based on role/specialty
 - Chief complaint and symptoms
 - Patient history display
@@ -219,17 +221,46 @@ Prints letter
 - Fallback: Gracefully handle missing/invalid credentials
 - Notification log table: `notifications` tracks all outbound messages with status
 
+### Consultation → Billing handoff
+
+Billing is reached from the consultation, not performed inside it:
+
+```
+Doctor completes the consultation      (clinical sign-off, never gated)
+  ↓
+"Raise invoice" button appears on the consultation
+  ↓
+Billing module, with patient and consultation prefilled
+  ↓
+Lines added · discount with reason · invoice issued
+  ↓
+Payment and mode recorded
+  ↓
+Appointment can be marked COMPLETE     (gated here)
+```
+
+The gate sits on the **appointment**, not the consultation: completing the
+consultation is what reveals the billing button, so gating that would make the
+bill impossible to raise. Completing a consultation therefore does not complete
+its appointment — the visit stays open until the patient has settled.
+
+Every invoice raised this way stores `consultation_id` and displays the visit's
+`C-0001` reference in the billing list, on the invoice page, on the printed
+invoice, and as a search term.
+
 ### Demo Workflow (Phase 4)
 ```
 Consultation completed
   ↓
-Invoice created automatically
+Billing button appears → invoice raised against that consultation
   ↓
 Appointment creates email + WhatsApp notification
   ↓
 Payment recorded
   ↓
 Receipt printed
+  ↓
+Appointment marked complete (refused until the bill is settled)
   ↓
 Notifications logged in database with delivery status
 ```

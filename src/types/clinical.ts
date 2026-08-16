@@ -5,6 +5,12 @@ export type PrescriptionStatus = "ACTIVE" | "COMPLETED" | "CANCELLED";
 export interface Consultation {
   id: string;
   clinic_id: string;
+  /**
+   * Clinic-facing reference such as C-0001, allocated in application code.
+   * Unique per clinic, so two clinics may both hold a C-0001. Printed on the
+   * invoice raised from this visit.
+   */
+  consultation_number: string;
   /** NULL for a walk-in consultation with no prior booking. */
   appointment_id: string | null;
   patient_id: string;
