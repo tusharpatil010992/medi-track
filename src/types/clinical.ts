@@ -6,8 +6,8 @@ export interface Consultation {
   id: string;
   clinic_id: string;
   /**
-   * Clinic-facing reference such as C-0001, allocated in application code.
-   * Unique per clinic, so two clinics may both hold a C-0001. Printed on the
+   * Clinic-facing reference such as C260818001, allocated in application code.
+   * Unique per clinic, so two clinics may both hold a C260818001. Printed on the
    * invoice raised from this visit.
    */
   consultation_number: string;

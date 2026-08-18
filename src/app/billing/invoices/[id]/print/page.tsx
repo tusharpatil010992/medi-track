@@ -136,8 +136,6 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
           <thead>
             <tr>
               <th>Description</th>
-              <th className={styles.numeric}>Qty</th>
-              <th className={styles.numeric}>Unit price</th>
               <th className={styles.numeric}>Amount</th>
             </tr>
           </thead>
@@ -145,8 +143,6 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
             {(items ?? []).map((item) => (
               <tr key={item.id}>
                 <td>{item.description}</td>
-                <td className={styles.numeric}>{item.quantity}</td>
-                <td className={styles.numeric}>{formatMoney(item.unit_price)}</td>
                 <td className={styles.numeric}>{formatMoney(item.amount)}</td>
               </tr>
             ))}

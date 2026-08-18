@@ -55,7 +55,7 @@ export function InvoiceSearch({ filters }: { filters: InvoiceFilters }) {
         <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: "stretch" }}>
           <TextField
             label="Patient, invoice or consultation"
-            placeholder="Name, P-0001, INV-0001 or C-0001"
+            placeholder="Name, P260818001, INV260818001 or C260818001"
             value={draft.q}
             onChange={(event) => set("q", event.target.value)}
             fullWidth

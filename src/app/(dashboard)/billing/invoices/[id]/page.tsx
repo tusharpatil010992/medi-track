@@ -175,8 +175,6 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
                 <TableHead>
                   <TableRow>
                     <TableCell>Description</TableCell>
-                    <TableCell align="right">Qty</TableCell>
-                    <TableCell align="right">Unit price</TableCell>
                     <TableCell align="right">Amount</TableCell>
                   </TableRow>
                 </TableHead>
@@ -184,8 +182,6 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
                   {(items ?? []).map((item) => (
                     <TableRow key={item.id}>
                       <TableCell>{item.description}</TableCell>
-                      <TableCell align="right">{item.quantity}</TableCell>
-                      <TableCell align="right">{formatMoney(item.unit_price)}</TableCell>
                       <TableCell align="right">{formatMoney(item.amount)}</TableCell>
                     </TableRow>
                   ))}

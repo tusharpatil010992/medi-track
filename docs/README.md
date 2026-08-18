@@ -167,6 +167,16 @@ Application must remain deployable to Vercel. This means:
 - WhatsApp notifications
 - See: [requirements.md - Phase 4](./requirements.md#phase-4-billing--notifications)
 
+### Phase 4.1: Reference numbering
+- Patient, consultation and invoice references carry a `YYMMDD` stamp and a
+  daily sequence (`P260818001`)
+- See: [database.md - Reference numbering](./database.md#reference-numbering)
+
+### Phase 4.2: Invoice line display
+- Invoice lines show description and amount only, on screen and in print
+- Quantity and unit price are still captured and stored, just not displayed
+- See: [database.md - invoice_items](./database.md#phase-4-billing--notifications)
+
 ### Phase 5: Security & Production (Weeks 11-12)
 - Medical documents (Supabase Storage)
 - Audit logging
@@ -337,7 +347,8 @@ A: Test cross-clinic access in Supabase SQL Editor as different users.
 
 ## Last Updated
 
-2026-08-16 — Phases 1–4 delivered; Phase 5 not started.
+2026-08-19 — Phases 1–4 delivered, plus Phase 4.1 (date-stamped reference
+numbers) and Phase 4.2 (invoice lines show amount only); Phase 5 not started.
 
 ---
 

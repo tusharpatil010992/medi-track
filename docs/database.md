@@ -217,8 +217,9 @@ audit_action:
 **patients**
 - `id` (UUID, PK)
 - `clinic_id` (UUID, FK → clinics)
-- `patient_number` (VARCHAR) — clinic-facing reference (`P-0001`), allocated in
-  application code. Unique **per clinic**, so two clinics may both hold a `P-0001`.
+- `patient_number` (VARCHAR) — clinic-facing reference (`P260818001`), allocated
+  in application code. Unique **per clinic**, so two clinics may both hold a
+  `P260818001`. See [Reference numbering](#reference-numbering).
 - `first_name` (VARCHAR, NOT NULL)
 - `last_name` (VARCHAR, NOT NULL)
 - `email` (VARCHAR)
@@ -278,12 +279,13 @@ audit_action:
 **consultations**
 - `id` (UUID, PK)
 - `clinic_id` (UUID, FK → clinics)
-- `consultation_number` (VARCHAR, NOT NULL) — clinic-facing reference (`C-0001`),
-  allocated in application code. Unique **per clinic**, so two clinics may both
-  hold a `C-0001`. Added in migration 0007 so an invoice can cite the visit it
-  came from in a form a human can act on: the bare UUID is useless on a printed
-  bill. Printed on both the consultation letter and the invoice, and searchable
-  from the billing list.
+- `consultation_number` (VARCHAR, NOT NULL) — clinic-facing reference
+  (`C260818001`), allocated in application code. Unique **per clinic**, so two
+  clinics may both hold a `C260818001`. Added in migration 0007 so an invoice can
+  cite the visit it came from in a form a human can act on: the bare UUID is
+  useless on a printed bill. Printed on both the consultation letter and the
+  invoice, and searchable from the billing list. See
+  [Reference numbering](#reference-numbering).
 - UNIQUE(`clinic_id`, `consultation_number`)
 - `appointment_id` (UUID, FK → appointments, UNIQUE, **NULLABLE**) — NULL for a
   walk-in consultation with no prior booking. Postgres treats NULLs as distinct
@@ -398,7 +400,8 @@ tax is held once per invoice rather than per service.
 - `clinic_id` (UUID, FK → clinics)
 - `patient_id` (UUID, FK → patients)
 - `consultation_id` (UUID, FK → consultations, ON DELETE SET NULL)
-- `invoice_number` (VARCHAR)
+- `invoice_number` (VARCHAR) — clinic-facing reference (`INV260818001`),
+  allocated in application code. See [Reference numbering](#reference-numbering).
 - `invoice_date` (DATE)
 - `due_date` (DATE)
 - `status` (invoice_status, default: 'DRAFT')
@@ -443,6 +446,13 @@ arithmetic lives; client-submitted totals are ignored.
 `prescription_items.medicine_id` + `medicine_name_snapshot`: the description is
 the snapshot and must never change when the price list is edited, while the FK
 preserves the link needed to report revenue by service.
+
+`quantity` and `unit_price` are still captured and still stored — the invoice
+editor asks for both, and `amount` remains `quantity × unit_price`. **Phase 4.2
+stopped displaying them**, on screen and on the printed invoice: a line now
+reads as its description and its amount. The breakdown is retained in the
+database for reporting and audit, so nothing was lost, and any future decision
+to show it again is a display change with no data migration behind it.
 
 **payments**
 - `id` (UUID, PK)
@@ -516,6 +526,53 @@ real failures under noise.
 - `status` (VARCHAR, default: 'SUCCESS')
 - `error_message` (TEXT)
 - `created_at` (TIMESTAMP)
+
+---
+
+## Reference numbering
+
+Three tables carry a human-facing reference alongside their UUID, because a UUID
+is useless on a printed letter or bill:
+
+| Table | Column | Example |
+|---|---|---|
+| `patients` | `patient_number` | `P260818001` |
+| `consultations` | `consultation_number` | `C260818001` |
+| `invoices` | `invoice_number` | `INV260818001` |
+
+A reference is its prefix, a `YYMMDD` stamp, then a sequence that **restarts at
+001 each day**. All three are allocated in application code — there is no
+sequence, default or trigger in the database (Rule 5). `src/lib/reference-numbers.ts`
+holds the format; each of the three server actions holds its own query.
+
+**Uniqueness is per clinic, not global.** Two clinics may both hold a
+`P260818001`. The daily restart is safe precisely because the date is inside the
+value, so `UNIQUE(clinic_id, ...)` still holds.
+
+**The stamp is `YYMMDD`, not `DDMMYY`, so that sorting these columns as text
+gives chronological order.** The billing list depends on that for its
+`invoice_date` then `invoice_number` sort, and it is what lets an allocator
+scope a query to a single day with a prefix match.
+
+**Allocation reads the day, then takes the numeric maximum.** Not the
+lexicographic one: past 999 a clinic's sequence widens to four digits, and
+`"1000"` sorts below `"999"` as text. Read-then-insert races are settled the
+way they always were — by the UNIQUE constraint and a retry on `23505`.
+
+**The date is UTC**, matching `consultation_date` and `invoice_date`, which are
+already stamped from the server clock. The reference always agrees with the date
+on its own row. `clinics.timezone` is deliberately not consulted: for IST
+(UTC+5:30) the two diverge only between 00:00 and 05:30 local, when no clinic is
+open. A clinic **west** of UTC would see an evening visit carry the next day's
+stamp — at that point derive the date from `clinics.timezone` and use it for the
+two date columns as well, so they do not drift apart.
+
+**Superseded references are left as issued.** Rows created before Phase 4.1 keep
+`P-0001`, `C-0001`, `INV-0001` — they are printed on documents already in
+patients' hands, and an invoice number is a financial record. No backfill was
+run and none should be. They never match a daily prefix, so allocation ignores
+them, and they sort before every dated reference under both `C` and `en_US`
+collations, which is chronologically correct since they are all older.
 
 ---
 

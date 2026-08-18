@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireClinicId, requireRole } from "@/lib/auth/session";
+import { dailyPrefix, nextReference } from "@/lib/reference-numbers";
 import { createClient } from "@/lib/supabase/server";
 import type { Patient } from "@/types/patient";
 
@@ -67,29 +68,29 @@ function validate(fields: PatientFields): string | null {
 }
 
 /**
- * Allocates the next patient number for a clinic, e.g. P-0007.
+ * Allocates the next patient number for a clinic, e.g. P260818007.
  *
- * Each clinic numbers independently. Read-then-insert races are possible, so
- * the caller retries on the unique-violation raised by
- * patients_clinic_number_unique.
+ * Each clinic numbers independently, and the sequence restarts at 001 each day.
+ * Only that day's references are read, so superseded P-0001 numbers are left
+ * untouched rather than continued.
+ *
+ * Read-then-insert races are possible, so the caller retries on the
+ * unique-violation raised by patients_clinic_number_unique.
  */
 async function nextPatientNumber(
   supabase: Awaited<ReturnType<typeof createClient>>,
   clinicId: string,
 ): Promise<string> {
+  const prefix = dailyPrefix("P");
+
   const { data } = await supabase
     .from("patients")
     .select("patient_number")
     .eq("clinic_id", clinicId)
-    .like("patient_number", "P-%")
-    .order("patient_number", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ patient_number: string }>();
+    .like("patient_number", `${prefix}%`)
+    .returns<{ patient_number: string }[]>();
 
-  const highest = data ? Number(data.patient_number.replace("P-", "")) : 0;
-  const next = Number.isFinite(highest) ? highest + 1 : 1;
-
-  return `P-${String(next).padStart(4, "0")}`;
+  return nextReference(prefix, (data ?? []).map((row) => row.patient_number));
 }
 
 export async function createPatient(

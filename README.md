@@ -57,6 +57,8 @@ tenant-isolation tests — is in **[docs/setup.md](docs/setup.md)**.
 | [summary/phase2_implementation.md](summary/phase2_implementation.md) | Phase 2 report and verification results |
 | [summary/phase3_implementation.md](summary/phase3_implementation.md) | Phase 3 report and verification results |
 | [summary/phase4_implementation.md](summary/phase4_implementation.md) | Phase 4 report, and the consultation → billing amendment |
+| [summary/phase4.1_implementation.md](summary/phase4.1_implementation.md) | Phase 4.1 — date-stamped patient, consultation and invoice references |
+| [summary/phase4.2_implementation.md](summary/phase4.2_implementation.md) | Phase 4.2 — invoice lines show amount only |
 | [summary/open-items.md](summary/open-items.md) | Deferred items awaiting decision |
 | [summary/clinic-deactivation-rule.md](summary/clinic-deactivation-rule.md) | What suspending a clinic does, and why |
 
@@ -68,6 +70,8 @@ tenant-isolation tests — is in **[docs/setup.md](docs/setup.md)**.
 | 2 | Patients, doctors, appointments | ✅ Complete |
 | 3 | Consultations, medicines, printing | ✅ Complete |
 | 4 | Billing, notifications | ✅ Complete — 119/119 isolation tests |
+| 4.1 | Date-stamped reference numbers | ✅ Complete — 119/119 isolation tests |
+| 4.2 | Invoice lines show amount only | ✅ Complete — 119/119 isolation tests |
 | 5 | Documents, audit, production readiness | Not started |
 
 ## Scripts

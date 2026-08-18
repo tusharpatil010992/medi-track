@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireClinicId, requireRole } from "@/lib/auth/session";
 import { notifyPatient } from "@/lib/notifications/dispatch";
+import { dailyPrefix, nextReference } from "@/lib/reference-numbers";
 import { createClient } from "@/lib/supabase/server";
 import {
   acceptsPayment,
@@ -96,25 +97,23 @@ function readAmount(formData: FormData, key: string): number | string {
 }
 
 /**
- * Allocates the next clinic-scoped invoice number.
+ * Allocates the next clinic-scoped invoice number, e.g. INV260818007.
  *
- * Same approach as patient numbers: read the highest, add one, and rely on the
- * UNIQUE(clinic_id, invoice_number) constraint plus a retry to settle a race.
+ * Same approach as patient numbers: read the day's references, take the next,
+ * and rely on the UNIQUE(clinic_id, invoice_number) constraint plus a retry to
+ * settle a race.
  */
 async function nextInvoiceNumber(supabase: SupabaseClient, clinicId: string): Promise<string> {
+  const prefix = dailyPrefix("INV");
+
   const { data } = await supabase
     .from("invoices")
     .select("invoice_number")
     .eq("clinic_id", clinicId)
-    .like("invoice_number", "INV-%")
-    .order("invoice_number", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ invoice_number: string }>();
+    .like("invoice_number", `${prefix}%`)
+    .returns<{ invoice_number: string }[]>();
 
-  const highest = data ? Number(data.invoice_number.replace("INV-", "")) : 0;
-  const next = Number.isFinite(highest) ? highest + 1 : 1;
-
-  return `INV-${String(next).padStart(4, "0")}`;
+  return nextReference(prefix, (data ?? []).map((row) => row.invoice_number));
 }
 
 /** Replaces an invoice's lines wholesale. Only ever called on a draft. */
