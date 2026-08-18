@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireClinicId, requireRole } from "@/lib/auth/session";
 import { notifyPatient } from "@/lib/notifications/dispatch";
+import { dailyPrefix, nextReference } from "@/lib/reference-numbers";
 import { createClient } from "@/lib/supabase/server";
 import { isConsultationEditable, type Consultation, type ConsultationStatus } from "@/types/clinical";
 
@@ -20,29 +21,26 @@ export interface StatusChangeResult {
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 /**
- * Allocates the next clinic-scoped consultation reference.
+ * Allocates the next clinic-scoped consultation reference, e.g. C260818007.
  *
- * Same approach as patient and invoice numbers: read the highest, add one, and
- * let the UNIQUE(clinic_id, consultation_number) constraint plus a retry settle
- * a race between two doctors opening a visit at the same moment.
+ * Same approach as patient and invoice numbers: read the day's references, take
+ * the next, and let the UNIQUE(clinic_id, consultation_number) constraint plus
+ * a retry settle a race between two doctors opening a visit at the same moment.
  */
 async function nextConsultationNumber(
   supabase: SupabaseClient,
   clinicId: string,
 ): Promise<string> {
+  const prefix = dailyPrefix("C");
+
   const { data } = await supabase
     .from("consultations")
     .select("consultation_number")
     .eq("clinic_id", clinicId)
-    .like("consultation_number", "C-%")
-    .order("consultation_number", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ consultation_number: string }>();
+    .like("consultation_number", `${prefix}%`)
+    .returns<{ consultation_number: string }[]>();
 
-  const highest = data ? Number(data.consultation_number.replace("C-", "")) : 0;
-  const next = Number.isFinite(highest) ? highest + 1 : 1;
-
-  return `C-${String(next).padStart(4, "0")}`;
+  return nextReference(prefix, (data ?? []).map((row) => row.consultation_number));
 }
 
 /**

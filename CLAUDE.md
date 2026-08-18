@@ -697,6 +697,8 @@ DONE ✓
 | 2 | Patients, doctors, appointments | ✅ Complete — 24/24 isolation tests ([summary](./summary/phase2_implementation.md)) |
 | 3 | Consultations, medicines, printing | ✅ Complete — 44/44 isolation tests ([summary](./summary/phase3_implementation.md)) |
 | 4 | Billing, notifications | ✅ Complete — 119/119 isolation tests ([summary](./summary/phase4_implementation.md)) |
+| 4.1 | Date-stamped reference numbers (`P260818001`) | ✅ Complete — 119/119 isolation tests ([summary](./summary/phase4.1_implementation.md)) |
+| 4.2 | Invoice lines show amount only (Qty / Unit price hidden) | ✅ Complete — 119/119 isolation tests ([summary](./summary/phase4.2_implementation.md)) |
 | 5 | Documents, audit, production readiness | Not started |
 
 ---

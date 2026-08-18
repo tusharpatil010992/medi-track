@@ -99,8 +99,8 @@ Appointment confirmed
 
 ### Consultation Module
 - Consultation page (`/consultations/[id]`)
-- Clinic-facing reference per visit (`C-0001`, unique per clinic) — cited by any
-  invoice raised from the visit, and printed on both documents
+- Clinic-facing reference per visit (`C260818001`, unique per clinic) — cited by
+  any invoice raised from the visit, and printed on both documents
 - Conditional sections based on role/specialty
 - Chief complaint and symptoms
 - Patient history display
@@ -174,8 +174,9 @@ Prints letter
 
 ### Invoice Management
 - Create invoices (from consultation or standalone)
-- Invoice number (unique within clinic: `unique(clinic_id, invoice_number)`)
-- Invoice items (services rendered with pricing)
+- Invoice number (`INV260818001`, unique within clinic: `unique(clinic_id, invoice_number)`)
+- Invoice items (services rendered with pricing) — quantity and unit price are
+  captured and stored, but shown as a single amount per line (Phase 4.2)
 - Server-calculated totals: subtotal, tax, discount, total, paid amount, balance
 - Invoice status: `DRAFT → ISSUED → PARTIALLY_PAID/PAID → CANCELLED/VOID`
 - Payment history
@@ -245,7 +246,7 @@ bill impossible to raise. Completing a consultation therefore does not complete
 its appointment — the visit stays open until the patient has settled.
 
 Every invoice raised this way stores `consultation_id` and displays the visit's
-`C-0001` reference in the billing list, on the invoice page, on the printed
+`C260818001` reference in the billing list, on the invoice page, on the printed
 invoice, and as a search term.
 
 ### Demo Workflow (Phase 4)

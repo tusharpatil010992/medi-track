@@ -164,8 +164,11 @@ The suite does not drive the browser. These still warrant a click-through:
 | …with an issued but unpaid invoice | Refused: "Record the payment and its mode…" |
 | Record a part payment, then complete the appointment | Allowed; invoice sits at **Partially paid** |
 | Apply a 100% discount with a reason, issue, then complete the appointment | Allowed with no payment recorded |
-| Search billing for `C-0001` | Returns the invoices raised from that consultation |
-| Print an invoice raised from a consultation | Header carries `Consultation C-0001 · <date>` |
+| Search billing for a consultation reference (`C260818001`) | Returns the invoices raised from that consultation |
+| Search billing for a date stamp (`260818`) | Returns everything referenced that day |
+| Print an invoice raised from a consultation | Header carries `Consultation C260818001 · <date>` |
+| Open an issued invoice, then print it | Items table shows **Description and Amount only** — no Qty or Unit price column, in either place |
+| Edit a draft invoice | The editor still asks for Qty and Unit price; only the display dropped them |
 | Apply a discount and leave the reason blank | Refused by the form *and* by the database CHECK |
 | Record a payment larger than the balance | Refused: "That is more than the outstanding balance" |
 | Split a bill across cash and card | Two payment rows; each prints its own receipt |

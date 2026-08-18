@@ -1,7 +1,7 @@
 export interface Patient {
   id: string;
   clinic_id: string;
-  /** Clinic-facing reference such as P-0001. Unique per clinic, not globally. */
+  /** Clinic-facing reference such as P260818001. Unique per clinic, not globally. */
   patient_number: string;
   first_name: string;
   last_name: string;
