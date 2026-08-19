@@ -184,6 +184,13 @@ Application must remain deployable to Vercel. This means:
   **and DOCTOR**
 - See: [requirements.md - Phase 4.3](./requirements.md#phase-43-clinic-defined-consultation-notes)
 
+### Phase 4.4: Navigation grouping and discount entry
+- Medicines, Consultation Fields and Billing Services collapse under one
+  **Master Data** heading in the sidebar
+- The invoice discount is entered as a percentage — `100` waives the bill — and
+  resolved to rupees on the server
+- See: [requirements.md - Phase 4.4](./requirements.md#phase-44-navigation-grouping-and-discount-entry)
+
 ### Phase 5: Security & Production (Weeks 11-12)
 - Medical documents (Supabase Storage)
 - Audit logging
@@ -355,8 +362,9 @@ A: Test cross-clinic access in Supabase SQL Editor as different users.
 ## Last Updated
 
 2026-08-19 — Phases 1–4 delivered, plus Phase 4.1 (date-stamped reference
-numbers), Phase 4.2 (invoice lines show amount only) and Phase 4.3
-(clinic-defined consultation notes); Phase 5 not started.
+numbers), Phase 4.2 (invoice lines show amount only), Phase 4.3 (clinic-defined
+consultation notes) and Phase 4.4 (Master Data nav group, percentage discount);
+Phase 5 not started.
 
 ---
 

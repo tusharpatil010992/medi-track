@@ -9,7 +9,10 @@ import { createClient } from "@/lib/supabase/server";
 import {
   acceptsPayment,
   computeInvoiceTotals,
+  computeSubtotal,
+  discountFromPercent,
   isInvoiceEditable,
+  MAX_DISCOUNT_PERCENT,
   PAYMENT_METHODS,
   round2,
   statusAfterPayment,
@@ -197,8 +200,19 @@ export async function saveInvoice(
   const tax = readAmount(formData, "tax_amount");
   if (typeof tax === "string") return { error: tax, invoiceId: null };
 
-  const discount = readAmount(formData, "discount_amount");
-  if (typeof discount === "string") return { error: discount, invoiceId: null };
+  // The form posts a percentage; the rupee value is derived here from the
+  // server's own line totals, so a tampered amount cannot reach the ledger.
+  const discountPercent = readAmount(formData, "discount_percent");
+  if (typeof discountPercent === "string") return { error: discountPercent, invoiceId: null };
+  if (discountPercent > MAX_DISCOUNT_PERCENT) {
+    return { error: `A discount cannot exceed ${MAX_DISCOUNT_PERCENT}%.`, invoiceId: null };
+  }
+
+  const discount = discountFromPercent(
+    computeSubtotal(lines.map((line) => ({ quantity: line.quantity, unitPrice: line.unitPrice }))),
+    tax,
+    discountPercent,
+  );
 
   const discountReason = String(formData.get("discount_reason") ?? "").trim() || null;
   if (discount > 0 && !discountReason) {

@@ -1268,8 +1268,15 @@ section("Phase 4 — invoice arithmetic");
 
 // These numbers are what a patient actually pays, so they are asserted directly
 // against the pure function the server uses rather than only through the UI.
-const { billingBlockerFor, computeInvoiceTotals, settlesConsultation, statusAfterPayment } =
-  await import("../src/types/billing.ts");
+const {
+  billingBlockerFor,
+  computeInvoiceTotals,
+  computeSubtotal,
+  discountFromPercent,
+  percentFromDiscount,
+  settlesConsultation,
+  statusAfterPayment,
+} = await import("../src/types/billing.ts");
 
 const simple = computeInvoiceTotals([{ quantity: 2, unitPrice: 250 }], 0, 0, 0);
 check(
@@ -1294,6 +1301,61 @@ check("Discount beyond the bill floors the total at zero", overDiscounted.totalA
 
 check("Full settlement marks PAID", statusAfterPayment(500, 500) === "PAID");
 check("Short settlement marks PARTIALLY_PAID", statusAfterPayment(500, 200) === "PARTIALLY_PAID");
+
+// ---------------------------------------------------------------------------
+section("Phase 4.4 — the discount is entered as a percentage");
+
+// The reason this exists: entering "100" used to take ₹100 off, because the
+// field was a rupee amount wearing the word "Discount". It is now a percentage,
+// resolved to rupees against the server's own line totals.
+const percentLines = [{ quantity: 1, unitPrice: 1000 }];
+const percentSubtotal = computeSubtotal(percentLines);
+
+check("Subtotal is taken from the lines alone", percentSubtotal === 1000, String(percentSubtotal));
+
+check(
+  "10% of a 1000 bill is 100 off",
+  discountFromPercent(percentSubtotal, 0, 10) === 100,
+  String(discountFromPercent(percentSubtotal, 0, 10)),
+);
+
+// The case the whole change exists for: a waived family visit must reach zero,
+// which means the percentage has to cover the tax as well as the subtotal.
+const waived = discountFromPercent(percentSubtotal, 50, 100);
+const waivedTotals = computeInvoiceTotals(percentLines, 50, waived, 0);
+check(
+  "100% waives a taxed bill down to zero",
+  waived === 1050 && waivedTotals.totalAmount === 0,
+  `discount ${waived}, total ${waivedTotals.totalAmount}`,
+);
+
+// Had the percentage been taken on the subtotal alone, the tax would survive —
+// the bug this decision avoids, asserted so nobody quietly reintroduces it.
+const subtotalOnly = computeInvoiceTotals(percentLines, 50, percentSubtotal, 0);
+check(
+  "Discounting the subtotal alone would have left the tax payable",
+  subtotalOnly.totalAmount === 50,
+  String(subtotalOnly.totalAmount),
+);
+
+check("A zero percent discount takes nothing off", discountFromPercent(1000, 50, 0) === 0);
+
+// Re-opening a draft raised before this change has to show a percentage.
+check(
+  "A stored amount reads back as its percentage",
+  percentFromDiscount(1000, 50, 105) === 10,
+  String(percentFromDiscount(1000, 50, 105)),
+);
+check("An empty bill reads back as zero percent", percentFromDiscount(0, 0, 0) === 0);
+
+// A flat discount from before rarely lands on a round percentage. It survives
+// the round trip to the paisa, which is what stops a re-saved draft drifting.
+const legacyPercent = percentFromDiscount(1000, 0, 150);
+check(
+  "A flat legacy discount round-trips within a paisa",
+  Math.abs(discountFromPercent(1000, 0, legacyPercent) - 150) <= 0.01,
+  `${legacyPercent}% → ${discountFromPercent(1000, 0, legacyPercent)}`,
+);
 
 check(
   "A part-paid invoice lets the visit close",

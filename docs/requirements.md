@@ -303,6 +303,29 @@ rows, each carrying a field, its text, and whether it prints.
 
 ---
 
+## Phase 4.4: Navigation grouping and discount entry
+
+### Master Data group
+- Medicines, Consultation Fields and Billing Services sit behind one
+  collapsible **Master Data** heading in the sidebar
+- The heading toggles only — it has no route of its own
+- Auto-expands when the page you are on lives inside it
+- ADMIN sees all three; DOCTOR sees the group holding Consultation Fields alone,
+  so the same item is always in the same place
+
+### Discount entered as a percentage
+- The invoice editor's discount field is a **percentage**, not a rupee amount.
+  Entering `100` waives the bill
+- Taken on the **taxed** bill (`subtotal + tax`), so 100% reaches zero — the
+  waived-family-visit case the discount exists for
+- The server resolves the percentage against its own line totals; a client
+  figure is never stored
+- `invoices.discount_amount` still stores rupees. Nothing about the totals, the
+  `discount_reason` CHECK, the printed invoice or the completion gate changes
+- Capped at 100%, in the form and again on the server
+
+---
+
 ## Phase 5: Documents, Audit & Production Readiness
 
 ### Medical Documents

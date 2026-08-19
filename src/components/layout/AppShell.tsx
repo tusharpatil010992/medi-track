@@ -14,8 +14,12 @@ import PeopleIcon from "@mui/icons-material/People";
 import MedicalInformationIcon from "@mui/icons-material/MedicalInformation";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import SettingsIcon from "@mui/icons-material/Settings";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import FolderIcon from "@mui/icons-material/Folder";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
+import Collapse from "@mui/material/Collapse";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
@@ -30,7 +34,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-import type { NavItem } from "@/config/navigation";
+import { isNavGroup, type NavEntry, type NavItem } from "@/config/navigation";
 import { logout } from "@/features/auth/actions";
 import { ROLE_LABELS, type Profile } from "@/types/user";
 
@@ -47,6 +51,7 @@ const ICONS = {
   consultations: AssignmentIcon,
   medicines: MedicationIcon,
   noteTypes: ListAltIcon,
+  masterData: FolderIcon,
   billing: ReceiptLongIcon,
   profile: AccountCircleIcon,
 } as const;
@@ -54,7 +59,7 @@ const ICONS = {
 interface AppShellProps {
   profile: Profile;
   clinicName: string;
-  navItems: NavItem[];
+  navItems: NavEntry[];
   children: React.ReactNode;
 }
 
@@ -62,26 +67,74 @@ export function AppShell({ profile, clinicName, navItems, children }: AppShellPr
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
+  // Explicit expand/collapse, keyed by group label. A group the user has not
+  // touched falls back to "open if it holds the page you are on", so landing on
+  // /medicines never hides the link you arrived by.
+  const [toggledGroups, setToggledGroups] = useState<Record<string, boolean>>({});
+
+  const covers = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
+  // The longest matching href wins, so /billing/services highlights Billing
+  // Services alone rather than Billing as well.
+  const activeHref = navItems
+    .flatMap((entry) => (isNavGroup(entry) ? entry.children : [entry]))
+    .map((item) => item.href)
+    .filter(covers)
+    .sort((a, b) => b.length - a.length)[0];
+
+  const renderItem = (item: NavItem, nested = false) => {
+    const Icon = ICONS[item.icon];
+
+    return (
+      <ListItemButton
+        key={item.href}
+        component={Link}
+        href={item.href}
+        selected={item.href === activeHref}
+        onClick={() => setMobileOpen(false)}
+        sx={{ borderRadius: 1, mb: 0.5, pl: nested ? 4 : undefined }}
+      >
+        <ListItemIcon sx={{ minWidth: 40 }}>
+          <Icon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText primary={item.label} />
+      </ListItemButton>
+    );
+  };
+
   const navigation = (
     <List component="nav" sx={{ px: 1 }}>
-      {navItems.map((item) => {
-        const Icon = ICONS[item.icon];
-        const selected = pathname === item.href || pathname.startsWith(`${item.href}/`);
+      {navItems.map((entry) => {
+        if (!isNavGroup(entry)) return renderItem(entry);
+
+        const Icon = ICONS[entry.icon];
+        const holdsActivePage = entry.children.some((child) => child.href === activeHref);
+        const open = toggledGroups[entry.label] ?? holdsActivePage;
 
         return (
-          <ListItemButton
-            key={item.href}
-            component={Link}
-            href={item.href}
-            selected={selected}
-            onClick={() => setMobileOpen(false)}
-            sx={{ borderRadius: 1, mb: 0.5 }}
-          >
-            <ListItemIcon sx={{ minWidth: 40 }}>
-              <Icon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary={item.label} />
-          </ListItemButton>
+          <div key={entry.label}>
+            {/* Toggles only — the group has no route, and closing the mobile
+                drawer here would hide the links the user just asked to see. */}
+            <ListItemButton
+              onClick={() =>
+                setToggledGroups((current) => ({ ...current, [entry.label]: !open }))
+              }
+              aria-expanded={open}
+              sx={{ borderRadius: 1, mb: 0.5 }}
+            >
+              <ListItemIcon sx={{ minWidth: 40 }}>
+                <Icon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary={entry.label} />
+              {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+            </ListItemButton>
+
+            <Collapse in={open} timeout="auto" unmountOnExit>
+              <List component="div" disablePadding>
+                {entry.children.map((child) => renderItem(child, true))}
+              </List>
+            </Collapse>
+          </div>
         );
       })}
     </List>

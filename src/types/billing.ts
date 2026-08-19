@@ -148,15 +148,54 @@ export interface InvoiceTotals {
  * through a server action. Client-submitted totals are never used anywhere;
  * this recomputes from the lines every time.
  */
+/** Exported so a percentage discount can be resolved before totals are taken. */
+export function computeSubtotal(lines: readonly InvoiceLine[]): number {
+  return round2(lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0));
+}
+
+/** The largest discount that may be applied, as a percentage. */
+export const MAX_DISCOUNT_PERCENT = 100;
+
+/**
+ * Rupee value of a percentage discount.
+ *
+ * Taken on the **taxed** bill, not the subtotal alone. With the total computed
+ * as `subtotal + tax − discount`, a 100% discount off the subtotal would leave
+ * the tax still payable, so a fully waived visit would never reach zero — and
+ * the waived visit is the case the discount exists for.
+ */
+export function discountFromPercent(
+  subtotal: number,
+  taxAmount: number,
+  percent: number,
+): number {
+  return round2(((subtotal + taxAmount) * percent) / 100);
+}
+
+/**
+ * The percentage a stored discount amount represents.
+ *
+ * Only used to re-open a draft in the editor. Invoices raised before the field
+ * became a percentage hold a flat amount, which rarely lands on a round
+ * percentage — so re-saving such a draft can move the discount by a few paise.
+ */
+export function percentFromDiscount(
+  subtotal: number,
+  taxAmount: number,
+  discountAmount: number,
+): number {
+  const bill = subtotal + taxAmount;
+  if (bill <= 0) return 0;
+  return round2((discountAmount / bill) * 100);
+}
+
 export function computeInvoiceTotals(
   lines: readonly InvoiceLine[],
   taxAmount: number,
   discountAmount: number,
   paidAmount: number,
 ): InvoiceTotals {
-  const subtotal = round2(
-    lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0),
-  );
+  const subtotal = computeSubtotal(lines);
 
   // Clamped at zero: a discount larger than the bill must not produce a
   // negative total that a "refund" could then be recorded against.
