@@ -35,6 +35,13 @@ Supabase Dashboard → SQL Editor. Paste and run each file from
 5. `0005_clinic_deactivation.sql`
 6. `0006_phase4_billing_notifications.sql`
 7. `0007_consultation_number.sql`
+8. `0008_phase4.3_consultation_notes.sql` — **destructive.** Read the banner at
+   the top of the file first: it clears `chief_complaint`, `patient_history`,
+   `examination_findings`, `diagnosis` and `treatment_plan` on every
+   consultation in every clinic. Those five columns are superseded by
+   `consultation_notes`; the clearing was authorised deliberately and cannot be
+   undone without a point-in-time restore. Run it once — a second run fails on
+   the seed's `UNIQUE(clinic_id, name)`, which is the intended brake.
 
 Confirm they landed:
 
@@ -44,9 +51,10 @@ WHERE schemaname = 'public' ORDER BY tablename;
 ```
 
 Expect `appointments`, `billing_services`, `clinics`, `clinic_config`,
-`consultations`, `doctor_availability`, `invoices`, `invoice_items`,
-`medicines`, `notifications`, `optical_power`, `patient_history`, `patients`,
-`payments`, `prescription_items`, `prescriptions`, `profiles` — each with
+`consultation_notes`, `consultation_note_types`, `consultations`,
+`doctor_availability`, `invoices`, `invoice_items`, `medicines`,
+`notifications`, `optical_power`, `patient_history`, `patients`, `payments`,
+`prescription_items`, `prescriptions`, `profiles` — each with
 `rowsecurity = true`.
 
 ## 4. Seed the first SUPER_ADMIN
@@ -116,7 +124,8 @@ Phase 4 checks are **skipped with a clear message** rather than failing
 obscurely if migration 0006 has not been applied — a missing table reports as
 `PGRST205`, which reads like a broken policy if you are not expecting it. A
 missing migration 0007 stops the run outright at a preflight check, since every
-consultation fixture depends on that column.
+consultation fixture depends on that column. Phase 4.3 checks are skipped the
+same way as Phase 4 if migration 0008 has not been applied.
 
 **Re-run it at the end of every phase**, not just the phase that added a table —
 each new clinic-owned table inherits these policy patterns, so a regression in
@@ -146,6 +155,18 @@ The suite does not drive the browser. These still warrant a click-through:
 | Doctor with specialty "General Medicine" opens a consultation | Optical power section is hidden |
 | Prescribe a deactivated medicine | Rejected: "… is deactivated and cannot be prescribed" |
 | Complete a consultation, then edit it | Fields read-only; save refused |
+| FRONT_DESK or OPTOMETRIST opens `/note-types` | Redirected to `/dashboard` — ADMIN and DOCTOR only |
+| ADMIN opens `/note-types` on a clinic created before 4.3 | The five seeded fields are listed |
+| DOCTOR adds a field, then opens a consultation | It appears in the **Field** dropdown |
+| Add a duplicate field name | Refused: "… is already in this clinic's list" |
+| Add two notes, tick one, save | Both show on the consultation; only the ticked one prints |
+| Clear a note's text and save | The note disappears from the form; the row is deactivated, not deleted |
+| Add a note, save, then press Save again without navigating away | Still one note — not two. This is the duplicate-insert path fixed in self-review |
+| Deactivate a field already used on a note | The note keeps its label and stays readable; the field is gone from the dropdown for new notes |
+| Rename a field, then reprint an earlier letter | The letter still shows the old label |
+| A second doctor opens the same consultation | Notes are read-only for them |
+| FRONT_DESK or ADMIN opens a consultation with no notes | "No notes recorded for this visit" — no empty form |
+| Open a patient's second visit | "Notes from earlier visits" lists the first visit's notes under their field names |
 | Open `/consultations/[id]/print` | Letter renders with no sidebar; browser print dialog is clean |
 | SUPER_ADMIN deactivates a clinic, then its ADMIN signs in | Rejected: "This clinic is currently suspended" |
 | A user of that clinic already signed in | Loses access on next request, redirected to `/login` |

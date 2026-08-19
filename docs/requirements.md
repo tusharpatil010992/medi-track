@@ -102,9 +102,10 @@ Appointment confirmed
 - Clinic-facing reference per visit (`C260818001`, unique per clinic) — cited by
   any invoice raised from the visit, and printed on both documents
 - Conditional sections based on role/specialty
-- Chief complaint and symptoms
-- Patient history display
-- Doctor notes and diagnosis
+- Chief complaint, patient history, examination findings, diagnosis and doctor's
+  notes — **superseded in Phase 4.3** by clinic-defined consultation notes; see
+  [Phase 4.3](#phase-43-clinic-defined-consultation-notes)
+- Patient history display — earlier visits shown date-wise
 - Follow-up date and notes
 - Consultation status: `DRAFT → IN_PROGRESS → COMPLETED/CANCELLED`
 
@@ -265,6 +266,40 @@ Appointment marked complete (refused until the bill is settled)
   ↓
 Notifications logged in database with delivery status
 ```
+
+---
+
+## Phase 4.3: Clinic-defined consultation notes
+
+Replaces the five fixed clinical textareas on a consultation — chief complaint,
+history, examination findings, diagnosis, treatment plan — with any number of
+rows, each carrying a field, its text, and whether it prints.
+
+### Consultation Fields master
+- Clinic-owned dropdown of field names (`/note-types`)
+- Maintained by **ADMIN and DOCTOR** — unlike medicines and billing services,
+  which are ADMIN-only. The clinicians writing the notes decide what a clinic
+  records
+- Every clinic starts with the five labels the form used to hard-code
+- Deactivate, never hard-delete: a deactivated field stays readable on the notes
+  already written under it, but cannot be chosen for a new one
+
+### Consultation notes
+- Any number of notes per visit; add and remove rows on the consultation page
+- Each note: field, free text, and a **Show on printed letter** checkbox
+- `note_type_snapshot` — the field label at the time of writing, never rewritten
+  when the master is renamed
+- Written by the owning DOCTOR while the visit is open; read-only to everyone
+  else, and to everyone once the visit closes
+- Soft delete only: removing a note from the form deactivates the row. There is
+  no DELETE policy on the table
+- Earlier visits' notes are shown date-wise on later consultations
+
+### Printing
+- The consultation letter prints exactly the notes ticked for it, each under its
+  own field heading
+- The five superseded columns are **reserved**: retained on `consultations`,
+  cleared by migration 0008, and no longer read or written
 
 ---
 
@@ -461,7 +496,9 @@ Status:             PAID
 ### Consultation Workflow
 - Create consultation
 - Update consultation
-- Add doctor notes
+- Add a consultation note against a clinic-defined field
+- Tick a note to print, and confirm untagged notes stay off the letter
+- Confirm a renamed field does not rewrite notes already written
 - Add medicines
 - Add optical power
 - Generate print view

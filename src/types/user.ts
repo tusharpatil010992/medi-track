@@ -70,6 +70,19 @@ export function canRecordBilling(role: UserRole): boolean {
 }
 
 /**
+ * Roles that maintain the consultation-field dropdown.
+ *
+ * Unlike medicines and billing services, which are ADMIN-only master data,
+ * DOCTOR maintains this list too: the clinicians filling the fields in are the
+ * ones who know what the clinic should be recording. RLS in migration 0008
+ * enforces the same pair of roles.
+ */
+export const NOTE_TYPE_MANAGING_ROLES = [
+  "ADMIN",
+  "DOCTOR",
+] as const satisfies readonly UserRole[];
+
+/**
  * Whether this user records optical power.
  *
  * True for OPTOMETRIST — measuring is their entire remit — and for a DOCTOR

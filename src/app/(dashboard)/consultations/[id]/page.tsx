@@ -11,19 +11,19 @@ import { notFound } from "next/navigation";
 
 import { ConsultationBilling } from "@/components/billing/ConsultationBilling";
 import { ConsultationDetailsForm } from "@/components/consultations/ConsultationDetailsForm";
+import { ConsultationNotesForm } from "@/components/consultations/ConsultationNotesForm";
 import { ConsultationStatusActions } from "@/components/consultations/ConsultationStatusActions";
 import { OpticalPowerForm } from "@/components/consultations/OpticalPowerForm";
 import { PrescriptionForm } from "@/components/consultations/PrescriptionForm";
-import {
-  PreviousHistory,
-  type PriorHistoryEntry,
-} from "@/components/consultations/PreviousHistory";
+import { PreviousHistory, type PriorNote } from "@/components/consultations/PreviousHistory";
 import { requireClinicId, requireRole } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import {
   CONSULTATION_STATUS_LABELS,
   isConsultationEditable,
   type Consultation,
+  type ConsultationNote,
+  type ConsultationNoteType,
   type Medicine,
   type OpticalPower,
   type Prescription,
@@ -48,8 +48,14 @@ export default async function ConsultationPage({ params }: { params: Promise<{ i
 
   if (!consultation) notFound();
 
-  const [{ data: patient }, { data: prescription }, { data: optical }, { data: priorHistory }] =
-    await Promise.all([
+  const [
+    { data: patient },
+    { data: prescription },
+    { data: optical },
+    { data: notes },
+    { data: noteTypes },
+    { data: priorVisits },
+  ] = await Promise.all([
     supabase
       .from("patients")
       .select("*")
@@ -68,18 +74,56 @@ export default async function ConsultationPage({ params }: { params: Promise<{ i
       .eq("consultation_id", id)
       .eq("clinic_id", clinicId)
       .maybeSingle<OpticalPower>(),
-    // Earlier visits that actually recorded history, newest first.
+    supabase
+      .from("consultation_notes")
+      .select("*")
+      .eq("consultation_id", id)
+      .eq("clinic_id", clinicId)
+      .eq("is_active", true)
+      .order("display_order")
+      .returns<ConsultationNote[]>(),
+    // Inactive fields included, so a note written under one still shows its
+    // label instead of falling back to a blank dropdown.
+    supabase
+      .from("consultation_note_types")
+      .select("*")
+      .eq("clinic_id", clinicId)
+      .order("display_order")
+      .order("name")
+      .returns<ConsultationNoteType[]>(),
+    // Earlier visits by this patient, newest first. Their notes are read below,
+    // once the visits themselves are known.
     supabase
       .from("consultations")
-      .select("id, consultation_date, patient_history")
+      .select("id, consultation_date")
       .eq("clinic_id", clinicId)
       .eq("patient_id", consultation.patient_id)
       .neq("id", consultation.id)
-      .not("patient_history", "is", null)
       .order("consultation_date", { ascending: false })
       .limit(10)
-      .returns<PriorHistoryEntry[]>(),
+      .returns<Pick<Consultation, "id" | "consultation_date">[]>(),
   ]);
+
+  const visitDates = new Map((priorVisits ?? []).map((visit) => [visit.id, visit.consultation_date]));
+
+  const { data: priorNoteRows } =
+    visitDates.size > 0
+      ? await supabase
+          .from("consultation_notes")
+          .select("id, consultation_id, note_type_snapshot, content")
+          .eq("clinic_id", clinicId)
+          .eq("is_active", true)
+          .in("consultation_id", [...visitDates.keys()])
+          .order("display_order")
+          .returns<Omit<PriorNote, "consultation_date">[]>()
+      : { data: [] as Omit<PriorNote, "consultation_date">[] };
+
+  // Ordered by visit, newest first, so PreviousHistory can group as it reads.
+  const priorNotes: PriorNote[] = (priorVisits ?? []).flatMap((visit) =>
+    (priorNoteRows ?? [])
+      .filter((note) => note.consultation_id === visit.id)
+      .map((note) => ({ ...note, consultation_date: visit.consultation_date })),
+  );
 
   // Medicines are only readable by ADMIN/DOCTOR/OPTOMETRIST under RLS, so this
   // returns nothing for other roles — the prescription form is hidden anyway.
@@ -168,7 +212,14 @@ export default async function ConsultationPage({ params }: { params: Promise<{ i
         </Alert>
       ) : null}
 
-      <PreviousHistory entries={priorHistory ?? []} />
+      <PreviousHistory notes={priorNotes} />
+
+      <ConsultationNotesForm
+        consultationId={consultation.id}
+        noteTypes={noteTypes ?? []}
+        notes={notes ?? []}
+        readOnly={!canEditClinical}
+      />
 
       <ConsultationDetailsForm consultation={consultation} readOnly={!canEditClinical} />
 

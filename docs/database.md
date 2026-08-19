@@ -295,11 +295,11 @@ audit_action:
 - `doctor_id` (UUID, FK → profiles)
 - `consultation_date` (DATE)
 - `status` (consultation_status, default: 'DRAFT')
-- `chief_complaint` (TEXT)
-- `patient_history` (TEXT)
-- `examination_findings` (TEXT)
-- `diagnosis` (TEXT)
-- `treatment_plan` (TEXT)
+- `chief_complaint` (TEXT) — **RESERVED**, see below
+- `patient_history` (TEXT) — **RESERVED**, see below
+- `examination_findings` (TEXT) — **RESERVED**, see below
+- `diagnosis` (TEXT) — **RESERVED**, see below
+- `treatment_plan` (TEXT) — **RESERVED**, see below
 - `follow_up_date` (DATE)
 - `follow_up_notes` (TEXT)
 - `is_active` (BOOLEAN, default: TRUE)
@@ -307,6 +307,14 @@ audit_action:
 - `updated_at` (TIMESTAMP)
 - `created_by` (UUID)
 - `updated_by` (UUID)
+
+> **The five RESERVED columns.** Phase 4.3 replaced them with
+> `consultation_notes`, where a clinic defines its own fields instead of
+> inheriting these. Migration 0008 **cleared their data** and nothing in the
+> application reads or writes them. They are kept on the table rather than
+> dropped in case a fixed shape is wanted again — a `COMMENT ON COLUMN` marks
+> each one in the database itself. See
+> [Phase 4.3](#phase-43-clinic-defined-consultation-notes).
 
 **medicines**
 - `id` (UUID, PK)
@@ -498,6 +506,50 @@ PENDING/SENT/FAILED — **SKIPPED**, meaning the clinic is still on placeholder
 credentials so nothing was attempted. Recording those as FAILED would bury the
 real failures under noise.
 
+### Phase 4.3: Clinic-defined consultation notes
+
+**consultation_note_types** — the dropdown a doctor picks from
+- `id` (UUID, PK)
+- `clinic_id` (UUID, FK → clinics)
+- `name` (VARCHAR(100))
+- `display_order` (INTEGER, default: 0)
+- `is_active` (BOOLEAN, default: TRUE)
+- `created_at` / `updated_at` (TIMESTAMP)
+- `created_by` / `updated_by` (UUID)
+- UNIQUE(`clinic_id`, `name`)
+
+Clinic-owned master data, like `medicines` and `billing_services`, but writable
+by **DOCTOR as well as ADMIN**: the clinicians filling the fields in are the
+ones who know what the clinic should be recording. Every clinic is seeded with
+the five labels the consultation form used to hard-code — by migration 0008 for
+clinics that already existed, and by `createClinic()` for new ones.
+
+**consultation_notes** — one row per note on a visit
+- `id` (UUID, PK)
+- `clinic_id` (UUID, FK → clinics)
+- `consultation_id` (UUID, FK → consultations)
+- `patient_id` (UUID, FK → patients) — denormalised, so reading a patient's
+  notes across visits needs no join
+- `note_type_id` (UUID, FK → consultation_note_types, ON DELETE SET NULL)
+- `note_type_snapshot` (VARCHAR(100)) — the field label at the time of writing
+- `content` (TEXT)
+- `show_on_receipt` (BOOLEAN, default: FALSE) — prints on the consultation letter
+- `display_order` (INTEGER, default: 0)
+- `is_active` (BOOLEAN, default: TRUE)
+- `created_at` / `updated_at` (TIMESTAMP)
+- `created_by` / `updated_by` (UUID)
+
+`note_type_snapshot` repeats the property `prescription_items.medicine_name_
+snapshot` and `invoice_items.description` already carry: renaming "Diagnosis"
+in the master must never rewrite a letter already handed to a patient. The FK
+stays alongside it so notes can still be counted by field.
+
+**Neither table has a DELETE policy.** Removing a note from the form sets
+`is_active = FALSE`; nothing in the application destroys clinical text. This is
+deliberately unlike `prescription_items`, which is replaced wholesale on save —
+so `saveConsultationNotes()` reconciles rows by id (update, insert, deactivate)
+rather than deleting and reinserting.
+
 ### Phase 5: Documents, Audit & Security
 
 **medical_documents**
@@ -677,6 +729,17 @@ Phase 3 continues the pattern: `consultations`, `prescriptions` and
 `prescription_items` are DOCTOR-write; `medicines` is ADMIN-write and readable
 only by ADMIN/DOCTOR/OPTOMETRIST; `optical_power` is writable by DOCTOR and
 OPTOMETRIST.
+
+Phase 4.3 adds the one master table that is **not** ADMIN-only:
+
+| Table | SELECT | INSERT / UPDATE | DELETE |
+|---|---|---|---|
+| `consultation_note_types` | clinic-wide | ADMIN, **DOCTOR** | none |
+| `consultation_notes` | clinic-wide | DOCTOR | none |
+
+`consultation_note_types` is readable clinic-wide rather than restricted like
+`medicines`, because these are field labels rather than clinical content, and
+every role that can open a consultation needs them to render its notes.
 
 ### Billing: a separation of duties
 

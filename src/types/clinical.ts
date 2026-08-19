@@ -17,14 +17,70 @@ export interface Consultation {
   doctor_id: string;
   consultation_date: string;
   status: ConsultationStatus;
+  /**
+   * The five fields below are RESERVED — superseded by `consultation_notes` in
+   * Phase 4.3, which records the same material as any number of typed rows.
+   * Migration 0008 cleared them and nothing reads or writes them. They are kept
+   * on the table rather than dropped in case a fixed shape is wanted again.
+   */
   chief_complaint: string | null;
-  /** Free-text history for this visit — not the patient_history audit table. */
+  /** Reserved. Free-text visit history — not the patient_history audit table. */
   patient_history: string | null;
   examination_findings: string | null;
   diagnosis: string | null;
   treatment_plan: string | null;
   follow_up_date: string | null;
   follow_up_notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+}
+
+/**
+ * One entry in the clinic's consultation-field dropdown.
+ *
+ * Clinic-owned master data maintained by ADMIN and DOCTOR at /note-types. Every
+ * clinic starts with the five labels the consultation form used to hard-code.
+ */
+export interface ConsultationNoteType {
+  id: string;
+  clinic_id: string;
+  name: string;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+}
+
+/**
+ * The fields every new clinic starts with — the five the consultation form
+ * hard-coded until Phase 4.3. Migration 0008 seeds the same list into clinics
+ * that already existed; createClinic() applies it to new ones.
+ */
+export const DEFAULT_NOTE_TYPES: readonly { name: string; display_order: number }[] = [
+  { name: "Chief complaint", display_order: 1 },
+  { name: "History", display_order: 2 },
+  { name: "Examination findings", display_order: 3 },
+  { name: "Diagnosis", display_order: 4 },
+  { name: "Treatment plan / doctor's note", display_order: 5 },
+];
+
+export interface ConsultationNote {
+  id: string;
+  clinic_id: string;
+  consultation_id: string;
+  patient_id: string;
+  note_type_id: string | null;
+  /** The field label at the moment the note was written. Never rewritten. */
+  note_type_snapshot: string;
+  content: string;
+  /** Checked by the doctor to print this note on the consultation letter. */
+  show_on_receipt: boolean;
+  display_order: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;

@@ -83,7 +83,12 @@ export default async function ConsultationsPage() {
                 <TableCell>Reference</TableCell>
                 <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Date</TableCell>
                 <TableCell>Patient</TableCell>
-                <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>Diagnosis</TableCell>
+                {/*
+                  A Diagnosis column stood here until Phase 4.3. There is no
+                  longer a fixed diagnosis field to summarise — a clinic defines
+                  its own — so the list stops guessing and the visit itself
+                  carries the notes.
+                */}
                 <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>Type</TableCell>
                 <TableCell>Status</TableCell>
               </TableRow>
@@ -106,9 +111,6 @@ export default async function ConsultationsPage() {
                       {patient
                         ? `${patientDisplayName(patient)} (${patient.patient_number})`
                         : "—"}
-                    </TableCell>
-                    <TableCell sx={{ display: { xs: "none", md: "table-cell" } }}>
-                      {consultation.diagnosis ?? "—"}
                     </TableCell>
                     <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
                       {consultation.appointment_id ? "Booked" : "Walk-in"}

@@ -8,6 +8,7 @@ import { requireRole } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { DUMMY_CONFIG_VALUES } from "@/types/clinic";
+import { DEFAULT_NOTE_TYPES } from "@/types/clinical";
 
 export interface CreateClinicState {
   error: string | null;
@@ -64,6 +65,20 @@ export async function createClinic(
   if (configError) {
     await admin.from("clinics").delete().eq("id", clinic.id);
     return { error: `Could not create clinic config: ${configError.message}`, provisioned: null };
+  }
+
+  // The consultation-field dropdown starts populated, so a doctor can write up
+  // their first visit without an administrator building the list first.
+  const { error: noteTypeError } = await admin.from("consultation_note_types").insert(
+    DEFAULT_NOTE_TYPES.map((noteType) => ({ clinic_id: clinic.id, ...noteType })),
+  );
+
+  if (noteTypeError) {
+    await admin.from("clinics").delete().eq("id", clinic.id);
+    return {
+      error: `Could not create consultation fields: ${noteTypeError.message}`,
+      provisioned: null,
+    };
   }
 
   const temporaryPassword = generateTemporaryPassword();

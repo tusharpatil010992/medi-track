@@ -11,6 +11,7 @@ import {
 import {
   formatDioptre,
   type Consultation,
+  type ConsultationNote,
   type OpticalPower,
   type Prescription,
   type PrescriptionItem,
@@ -49,39 +50,56 @@ export default async function ConsultationPrintPage({
 
   if (!consultation) notFound();
 
-  const [{ data: clinic }, { data: patient }, { data: doctor }, { data: optical }, { data: prescription }] =
-    await Promise.all([
-      // Only the print offset — the letter carries no clinic header.
-      supabase
-        .from("clinics")
-        .select("letterhead_gap_percent")
-        .eq("id", clinicId)
-        .maybeSingle<Pick<Clinic, "letterhead_gap_percent">>(),
-      supabase
-        .from("patients")
-        .select("*")
-        .eq("id", consultation.patient_id)
-        .eq("clinic_id", clinicId)
-        .maybeSingle<Patient>(),
-      supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", consultation.doctor_id)
-        .eq("clinic_id", clinicId)
-        .maybeSingle<Profile>(),
-      supabase
-        .from("optical_power")
-        .select("*")
-        .eq("consultation_id", id)
-        .eq("clinic_id", clinicId)
-        .maybeSingle<OpticalPower>(),
-      supabase
-        .from("prescriptions")
-        .select("*")
-        .eq("consultation_id", id)
-        .eq("clinic_id", clinicId)
-        .maybeSingle<Prescription>(),
-    ]);
+  const [
+    { data: clinic },
+    { data: patient },
+    { data: doctor },
+    { data: optical },
+    { data: prescription },
+    { data: notes },
+  ] = await Promise.all([
+    // Only the print offset — the letter carries no clinic header.
+    supabase
+      .from("clinics")
+      .select("letterhead_gap_percent")
+      .eq("id", clinicId)
+      .maybeSingle<Pick<Clinic, "letterhead_gap_percent">>(),
+    supabase
+      .from("patients")
+      .select("*")
+      .eq("id", consultation.patient_id)
+      .eq("clinic_id", clinicId)
+      .maybeSingle<Patient>(),
+    supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", consultation.doctor_id)
+      .eq("clinic_id", clinicId)
+      .maybeSingle<Profile>(),
+    supabase
+      .from("optical_power")
+      .select("*")
+      .eq("consultation_id", id)
+      .eq("clinic_id", clinicId)
+      .maybeSingle<OpticalPower>(),
+    supabase
+      .from("prescriptions")
+      .select("*")
+      .eq("consultation_id", id)
+      .eq("clinic_id", clinicId)
+      .maybeSingle<Prescription>(),
+    // Only the notes the doctor ticked for the letter. Everything else stays
+    // in the record and off the page the patient carries away.
+    supabase
+      .from("consultation_notes")
+      .select("*")
+      .eq("consultation_id", id)
+      .eq("clinic_id", clinicId)
+      .eq("is_active", true)
+      .eq("show_on_receipt", true)
+      .order("display_order")
+      .returns<ConsultationNote[]>(),
+  ]);
 
   const { data: fetchedItems } = prescription
     ? await supabase
@@ -94,7 +112,8 @@ export default async function ConsultationPrintPage({
 
   const items = fetchedItems ?? [];
 
-  const gapPercent = clinic?.letterhead_gap_percent ?? DEFAULT_LETTERHEAD_GAP_PERCENT;
+  const gapPercent =
+    clinic?.letterhead_gap_percent ?? DEFAULT_LETTERHEAD_GAP_PERCENT;
   const age = patient ? patientAge(patient.date_of_birth) : null;
   const hasOptical =
     optical &&
@@ -123,7 +142,9 @@ export default async function ConsultationPrintPage({
           style={{ height: letterheadGapToMm(gapPercent) }}
           aria-hidden="true"
         >
-          <span className={styles.letterheadHint}>Letterhead area — blank when printed</span>
+          <span className={styles.letterheadHint}>
+            Letterhead area — blank when printed
+          </span>
         </div>
       ) : null}
 
@@ -139,24 +160,21 @@ export default async function ConsultationPrintPage({
         <div className={styles.right}>
           <div>Date: {consultation.consultation_date}</div>
           {/* Matches the reference printed on the invoice for this visit. */}
-          <div className={styles.muted}>Ref: {consultation.consultation_number}</div>
-          {consultation.follow_up_date ? <div>Follow-up: {consultation.follow_up_date}</div> : null}
+          <div className={styles.muted}>
+            Ref: {consultation.consultation_number}
+          </div>
+          {consultation.follow_up_date ? (
+            <div>Follow-up: {consultation.follow_up_date}</div>
+          ) : null}
         </div>
       </section>
 
-      {consultation.diagnosis ? (
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Diagnosis</h2>
-          <p className={styles.body}>{consultation.diagnosis}</p>
+      {(notes ?? []).map((note) => (
+        <section key={note.id} className={styles.section}>
+          <h2 className={styles.sectionTitle}>{note.note_type_snapshot}</h2>
+          <p className={styles.body}>{note.content}</p>
         </section>
-      ) : null}
-
-      {consultation.treatment_plan ? (
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Notes</h2>
-          <p className={styles.body}>{consultation.treatment_plan}</p>
-        </section>
-      ) : null}
+      ))}
 
       {hasOptical && optical ? (
         <section className={styles.section}>
@@ -227,7 +245,10 @@ export default async function ConsultationPrintPage({
           <div className={styles.signatureLine} />
           <div>{doctor?.full_name ?? ""}</div>
           <div className={styles.muted}>
-            {[doctor?.specialty, doctor?.license_number ? `Reg. ${doctor.license_number}` : null]
+            {[
+              doctor?.specialty,
+              doctor?.license_number ? `Reg. ${doctor.license_number}` : null,
+            ]
               .filter(Boolean)
               .join(" · ")}
           </div>

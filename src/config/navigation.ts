@@ -14,6 +14,7 @@ export interface NavItem {
     | "schedule"
     | "consultations"
     | "medicines"
+    | "noteTypes"
     | "billing"
     | "profile";
 }
@@ -40,6 +41,12 @@ const CONSULTATIONS: NavItem = {
   icon: "consultations",
 };
 const BILLING: NavItem = { label: "Billing", href: "/billing", icon: "billing" };
+/** The consultation-notes dropdown, maintained by ADMIN and DOCTOR alike. */
+const NOTE_TYPES: NavItem = {
+  label: "Consultation Fields",
+  href: "/note-types",
+  icon: "noteTypes",
+};
 
 export const NAVIGATION: Record<UserRole, NavItem[]> = {
   SUPER_ADMIN: [DASHBOARD, { label: "Clinics", href: "/clinics", icon: "clinics" }, PROFILE],
@@ -50,6 +57,7 @@ export const NAVIGATION: Record<UserRole, NavItem[]> = {
     CONSULTATIONS,
     BILLING,
     { label: "Medicines", href: "/medicines", icon: "medicines" },
+    NOTE_TYPES,
     { label: "Billing Services", href: "/billing/services", icon: "billing" },
     { label: "Users", href: "/users", icon: "users" },
     { label: "Clinic Settings", href: "/settings", icon: "settings" },
@@ -61,6 +69,7 @@ export const NAVIGATION: Record<UserRole, NavItem[]> = {
     APPOINTMENTS,
     CONSULTATIONS,
     BILLING,
+    NOTE_TYPES,
     { label: "My Schedule", href: "/schedule", icon: "schedule" },
     PROFILE,
   ],

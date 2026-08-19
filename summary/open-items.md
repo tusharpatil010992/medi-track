@@ -4,7 +4,7 @@ Running log of things flagged during implementation and **deferred by decision
 until after the final phase**. Nothing here is blocking; each is recorded so it
 is decided deliberately rather than forgotten.
 
-Last updated: 2026-08-16 (post Phase 4, after the consultation → billing amendment)
+Last updated: 2026-08-19 (post Phase 4.3, clinic-defined consultation notes)
 
 ---
 
@@ -50,13 +50,15 @@ not a gap. Recorded in case the clinic later wants optometrist-led appointments.
 ---
 
 ## 4. `patient_history` name means two different things
-**Raised:** Phase 3 · **Severity:** cosmetic, but a genuine trip hazard
+**Raised:** Phase 3 · **Largely defused in Phase 4.3**
 
 - `patient_history` **table** (0002) — change-audit trail of edits to a patient record
 - `consultations.patient_history` **column** (0003) — free-text clinical history for one visit
 
-Both are documented, and both follow the source docs, but the shared name
-invites confusion. Renaming either is a breaking change; deferred.
+The column is now RESERVED and unread: per-visit history is a
+`consultation_notes` row like any other field. Only one live meaning remains, so
+the trap is gone in practice. The column itself still carries the name, so this
+stays on the list until it is either dropped or renamed.
 
 ---
 
@@ -216,6 +218,44 @@ being marked finished, because there is no appointment to mark. If walk-ins turn
 out to be a common billing route, the gate needs a second home — most likely
 refusing to let a walk-in consultation leave IN_PROGRESS until settled, which
 reintroduces the deadlock unless the button appears earlier for walk-ins only.
+
+---
+
+## 15. Any doctor can rename a field every other doctor is using
+**Raised:** Phase 4.3 · **Severity:** low, but it is a shared list
+
+`consultation_note_types` is clinic-wide and writable by ADMIN **and** DOCTOR,
+as asked. Nothing scopes a field to the doctor who created it, so one clinician
+can rename or deactivate a field their colleagues rely on.
+
+The damage is bounded by design: `note_type_snapshot` means notes already
+written keep their label, and a deactivated field still renders on the rows
+using it. What a colleague loses is the field in their dropdown, not their text.
+
+If it becomes a problem, the options are an ADMIN-only edit (leaving DOCTOR able
+to add but not change) or per-doctor fields — a bigger change, and nothing has
+asked for it.
+
+*Where:* `src/features/note-types/actions.ts`
+
+---
+
+## 16. Consultation notes are not per-doctor-scoped on a shared visit
+**Raised:** Phase 4.3 · **Severity:** by design, worth knowing
+
+Only the **owning** doctor can write notes on a consultation, which is the same
+rule the rest of the consultation already followed. RLS is looser than that: it
+permits any DOCTOR in the clinic, and ownership is enforced in the page and the
+form rather than in a policy — exactly as `updateConsultation` has always
+worked.
+
+So a doctor who bypassed the UI could write a note on a colleague's visit within
+their own clinic. The tenant boundary is unaffected and is enforced by RLS. If
+per-visit ownership needs to be a real boundary, it belongs in a policy on
+`consultations.doctor_id`, and it should be applied to the whole consultation at
+once rather than to notes alone.
+
+*Where:* `src/features/consultation-notes/actions.ts`
 
 ---
 
