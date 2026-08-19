@@ -18,7 +18,11 @@ import { SubmitButton } from "@/components/common/SubmitButton";
 import { saveInvoice, type InvoiceFormState } from "@/features/billing/actions";
 import {
   computeInvoiceTotals,
+  computeSubtotal,
+  discountFromPercent,
   formatMoney,
+  MAX_DISCOUNT_PERCENT,
+  percentFromDiscount,
   type BillingService,
   type Invoice,
   type InvoiceItem,
@@ -79,8 +83,18 @@ export function InvoiceForm({
   );
 
   const [tax, setTax] = useState(invoice ? String(invoice.tax_amount) : "0");
-  const [discount, setDiscount] = useState(invoice ? String(invoice.discount_amount) : "0");
   const [discountReason, setDiscountReason] = useState(invoice?.discount_reason ?? "");
+
+  // The stored column is a rupee amount; the field is a percentage. An invoice
+  // raised before this change holds a flat discount, so its percentage is
+  // derived from what was stored rather than read back directly.
+  const [discountPercent, setDiscountPercent] = useState(() =>
+    invoice
+      ? String(
+          percentFromDiscount(invoice.subtotal, invoice.tax_amount, invoice.discount_amount),
+        )
+      : "0",
+  );
 
   const update = (key: string, field: keyof Omit<Row, "key">, value: string) => {
     setRows((current) =>
@@ -105,19 +119,29 @@ export function InvoiceForm({
     );
   };
 
+  const lines = rows
+    .filter((row) => row.description.trim())
+    .map((row) => ({
+      quantity: Number(row.quantity) || 0,
+      unitPrice: Number(row.unitPrice) || 0,
+    }));
+
+  const taxAmount = Number(tax) || 0;
+  const percent = Number(discountPercent) || 0;
+
+  // Mirrors what the server will recompute from its own lines, so the preview
+  // and the saved invoice cannot disagree.
+  const discountAmount = discountFromPercent(computeSubtotal(lines), taxAmount, percent);
+
   const preview = computeInvoiceTotals(
-    rows
-      .filter((row) => row.description.trim())
-      .map((row) => ({
-        quantity: Number(row.quantity) || 0,
-        unitPrice: Number(row.unitPrice) || 0,
-      })),
-    Number(tax) || 0,
-    Number(discount) || 0,
+    lines,
+    taxAmount,
+    discountAmount,
     invoice?.paid_amount ?? 0,
   );
 
-  const discountNeedsReason = (Number(discount) || 0) > 0 && !discountReason.trim();
+  const discountNeedsReason = percent > 0 && !discountReason.trim();
+  const percentOutOfRange = percent < 0 || percent > MAX_DISCOUNT_PERCENT;
 
   return (
     <Card>
@@ -234,13 +258,21 @@ export function InvoiceForm({
                 fullWidth
               />
               <TextField
-                name="discount_amount"
-                label="Discount"
+                name="discount_percent"
+                label="Discount %"
                 type="number"
-                value={discount}
-                onChange={(event) => setDiscount(event.target.value)}
-                slotProps={{ htmlInput: { min: "0", step: "0.01" } }}
+                value={discountPercent}
+                onChange={(event) => setDiscountPercent(event.target.value)}
+                slotProps={{
+                  htmlInput: { min: "0", max: String(MAX_DISCOUNT_PERCENT), step: "0.01" },
+                }}
                 fullWidth
+                error={percentOutOfRange}
+                helperText={
+                  percentOutOfRange
+                    ? `Enter between 0 and ${MAX_DISCOUNT_PERCENT}.`
+                    : `${percent}% — ${formatMoney(discountAmount)} off the taxed bill`
+                }
               />
             </Stack>
 
@@ -250,7 +282,7 @@ export function InvoiceForm({
               value={discountReason}
               onChange={(event) => setDiscountReason(event.target.value)}
               fullWidth
-              required={(Number(discount) || 0) > 0}
+              required={percent > 0}
               error={discountNeedsReason}
               helperText={
                 discountNeedsReason
@@ -272,6 +304,11 @@ export function InvoiceForm({
               <Typography variant="body2" color="text.secondary">
                 Subtotal {formatMoney(preview.subtotal)}
               </Typography>
+              {discountAmount > 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  Discount ({percent}%) −{formatMoney(discountAmount)}
+                </Typography>
+              ) : null}
               <Typography variant="h5" component="p">
                 Total {formatMoney(preview.totalAmount)}
               </Typography>

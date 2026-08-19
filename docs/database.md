@@ -415,7 +415,10 @@ tax is held once per invoice rather than per service.
 - `status` (invoice_status, default: 'DRAFT')
 - `subtotal` (DECIMAL)
 - `tax_amount` (DECIMAL, default: 0)
-- `discount_amount` (DECIMAL, default: 0)
+- `discount_amount` (DECIMAL, default: 0) — a rupee value. The invoice editor
+  asks for a **percentage** (Phase 4.4) and the server resolves it to this
+  amount from its own line totals; no percentage is stored, since the ledger
+  records money. See [Phase 4.4](#phase-44-discount-entered-as-a-percentage)
 - `discount_reason` (TEXT) — **why** the discount was given, in free text
 - `total_amount` (DECIMAL)
 - `paid_amount` (DECIMAL, default: 0)

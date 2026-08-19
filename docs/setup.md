@@ -190,6 +190,15 @@ The suite does not drive the browser. These still warrant a click-through:
 | Print an invoice raised from a consultation | Header carries `Consultation C260818001 · <date>` |
 | Open an issued invoice, then print it | Items table shows **Description and Amount only** — no Qty or Unit price column, in either place |
 | Edit a draft invoice | The editor still asks for Qty and Unit price; only the display dropped them |
+| ADMIN opens the sidebar | Medicines, Consultation Fields and Billing Services sit under **Master Data**, collapsed |
+| Open `/medicines` directly, or refresh while on it | Master Data is already expanded, with Medicines highlighted |
+| Open `/billing/services` | Billing Services is highlighted; **Billing is not** |
+| Tap the Master Data heading on mobile | The group expands; the drawer stays open. Tapping a child navigates and closes it |
+| DOCTOR opens the sidebar | Master Data holds Consultation Fields alone |
+| Enter a discount of 100 on a ₹1000 bill with ₹50 tax | Total reads ₹0.00 — the field is a percentage |
+| Enter a discount of 10 on the same bill | Discount line reads −₹105.00; total ₹945.00 |
+| Enter a discount above 100 | Field errors: "Enter between 0 and 100"; the server refuses it too |
+| Re-open a draft raised before Phase 4.4 with a flat discount | Shows the equivalent percentage; the rupee figure may move by a paisa if re-saved |
 | Apply a discount and leave the reason blank | Refused by the form *and* by the database CHECK |
 | Record a payment larger than the balance | Refused: "That is more than the outstanding balance" |
 | Split a bill across cash and card | Two payment rows; each prints its own receipt |
