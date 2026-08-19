@@ -178,14 +178,11 @@ export async function updateConsultation(
 
   const text = (key: string) => String(formData.get(key) ?? "").trim() || null;
 
+  // Only the follow-up arrangements live on the consultation row now. The five
+  // clinical columns are RESERVED as of Phase 4.3 — see saveConsultationNotes().
   const { error } = await supabase
     .from("consultations")
     .update({
-      chief_complaint: text("chief_complaint"),
-      patient_history: text("patient_history"),
-      examination_findings: text("examination_findings"),
-      diagnosis: text("diagnosis"),
-      treatment_plan: text("treatment_plan"),
       follow_up_date: text("follow_up_date"),
       follow_up_notes: text("follow_up_notes"),
       updated_at: new Date().toISOString(),

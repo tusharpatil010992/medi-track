@@ -8,6 +8,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import MenuIcon from "@mui/icons-material/Menu";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import MedicationIcon from "@mui/icons-material/Medication";
+import ListAltIcon from "@mui/icons-material/ListAlt";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import PeopleIcon from "@mui/icons-material/People";
 import MedicalInformationIcon from "@mui/icons-material/MedicalInformation";
@@ -45,6 +46,7 @@ const ICONS = {
   schedule: EventAvailableIcon,
   consultations: AssignmentIcon,
   medicines: MedicationIcon,
+  noteTypes: ListAltIcon,
   billing: ReceiptLongIcon,
   profile: AccountCircleIcon,
 } as const;

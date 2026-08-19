@@ -4,45 +4,86 @@ import AccordionSummary from "@mui/material/AccordionSummary";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
+import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-export interface PriorHistoryEntry {
+/** One note from an earlier visit, already resolved to that visit's date. */
+export interface PriorNote {
   id: string;
+  consultation_id: string;
   consultation_date: string;
-  patient_history: string | null;
+  note_type_snapshot: string;
+  content: string;
+}
+
+interface Visit {
+  consultationId: string;
+  date: string;
+  notes: PriorNote[];
+}
+
+/** Groups notes by the visit they were written at, preserving the given order. */
+function groupByVisit(notes: PriorNote[]): Visit[] {
+  const visits: Visit[] = [];
+
+  for (const note of notes) {
+    const current = visits.at(-1);
+    if (current && current.consultationId === note.consultation_id) {
+      current.notes.push(note);
+      continue;
+    }
+    visits.push({
+      consultationId: note.consultation_id,
+      date: note.consultation_date,
+      notes: [note],
+    });
+  }
+
+  return visits;
 }
 
 /**
- * History recorded at this patient's earlier visits, newest first.
+ * Notes recorded at this patient's earlier visits, newest first.
  *
- * Read-only. The two most recent are expanded; older ones stay collapsed so the
- * consultation page does not become a wall of text.
+ * Read-only. The two most recent visits are expanded; older ones stay collapsed
+ * so the consultation page does not become a wall of text.
  */
-export function PreviousHistory({ entries }: { entries: PriorHistoryEntry[] }) {
+export function PreviousHistory({ notes }: { notes: PriorNote[] }) {
   // Nothing to show means no empty box — the section disappears entirely.
-  if (entries.length === 0) return null;
+  if (notes.length === 0) return null;
+
+  const visits = groupByVisit(notes);
 
   return (
     <Card>
       <CardContent>
         <Typography variant="h4" component="h2" gutterBottom>
-          History from earlier visits
+          Notes from earlier visits
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Recorded at previous consultations. Read-only here.
         </Typography>
 
-        {entries.map((entry, index) => (
-          <Accordion key={entry.id} defaultExpanded={index < 2} disableGutters>
+        {visits.map((visit, index) => (
+          <Accordion key={visit.consultationId} defaultExpanded={index < 2} disableGutters>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
               <Typography variant="h6" component="h3">
-                {entry.consultation_date}
+                {visit.date}
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-                {entry.patient_history}
-              </Typography>
+              <Stack spacing={1.5}>
+                {visit.notes.map((note) => (
+                  <div key={note.id}>
+                    <Typography variant="subtitle2" component="h4">
+                      {note.note_type_snapshot}
+                    </Typography>
+                    <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                      {note.content}
+                    </Typography>
+                  </div>
+                ))}
+              </Stack>
             </AccordionDetails>
           </Accordion>
         ))}

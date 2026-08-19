@@ -591,17 +591,17 @@ check(
 // ---------------------------------------------------------------------------
 section("Profile — per-visit history is clinic and patient scoped");
 
-// The consultation page shows history from a patient's earlier visits. That
-// query must never reach another clinic, or another patient in the same clinic.
-const { data: priorHistory } = await asDoctorA
+// The consultation page shows notes from a patient's earlier visits. The visit
+// lookup that feeds it must never reach another clinic, or another patient in
+// the same clinic. The notes themselves are asserted in the Phase 4.3 block.
+const { data: priorVisits } = await asDoctorA
   .from("consultations")
-  .select("id, clinic_id, patient_id, patient_history")
-  .not("patient_history", "is", null);
+  .select("id, clinic_id, patient_id");
 
 check(
-  "Prior-history query stays inside own clinic",
-  (priorHistory ?? []).every((row) => row.clinic_id === clinicA),
-  `${priorHistory?.length ?? 0} row(s)`,
+  "Prior-visit query stays inside own clinic",
+  (priorVisits ?? []).every((row) => row.clinic_id === clinicA),
+  `${priorVisits?.length ?? 0} row(s)`,
 );
 
 const { data: otherPatientHistory } = await asDoctorA
@@ -1033,6 +1033,231 @@ if (phase4Ready) {
 } else {
   section("Phase 4 — SKIPPED");
   console.log("  Billing tables are absent. Apply supabase/migrations/0006_phase4_billing_notifications.sql");
+  console.log("  (Supabase Dashboard → SQL Editor → paste → Run), then re-run this suite.");
+  fail += 1;
+}
+
+// ---------------------------------------------------------------------------
+// Same probe pattern as Phase 4: without migration 0008 every check below would
+// fail with PGRST205 ("table not found"), which reads like a broken policy
+// rather than a migration that has not been run.
+const { error: phase43Probe } = await admin.from("consultation_notes").select("id").limit(1);
+const phase43Ready = phase43Probe?.code !== "PGRST205";
+
+async function runPhase43DatabaseTests() {
+section("Phase 4.3 — the note-type dropdown is ADMIN and DOCTOR managed");
+
+// Fixture clinics are inserted with the service key, which skips the seeding
+// createClinic() does, so these inserts are the clinic's first fields.
+const { data: adminType, error: adminTypeErr } = await asAdminA
+  .from("consultation_note_types")
+  .insert({ clinic_id: clinicA, name: "Probe Diagnosis", display_order: 1 })
+  .select("id")
+  .single();
+check("ADMIN can add a field", Boolean(adminType), adminTypeErr?.code ?? "");
+
+const { data: doctorType, error: doctorTypeErr } = await asDoctorA
+  .from("consultation_note_types")
+  .insert({ clinic_id: clinicA, name: "Probe History", display_order: 2 })
+  .select("id")
+  .single();
+check("DOCTOR can add a field too", Boolean(doctorType), doctorTypeErr?.code ?? "");
+
+const { error: deskTypeErr } = await asFrontDeskA
+  .from("consultation_note_types")
+  .insert({ clinic_id: clinicA, name: "Desk Field" });
+check(
+  "FRONT_DESK cannot add a field",
+  deskTypeErr?.code === "42501",
+  deskTypeErr?.code ?? "none",
+);
+
+const { error: optomTypeErr } = await asOptometristA
+  .from("consultation_note_types")
+  .insert({ clinic_id: clinicA, name: "Optom Field" });
+check(
+  "OPTOMETRIST cannot add a field",
+  optomTypeErr?.code === "42501",
+  optomTypeErr?.code ?? "none",
+);
+
+// Field labels are not clinical content, and every role that opens a
+// consultation needs them to render its notes.
+const { data: deskReadsTypes } = await asFrontDeskA
+  .from("consultation_note_types")
+  .select("id");
+check("FRONT_DESK can still read the field list", (deskReadsTypes?.length ?? 0) > 0);
+
+const { error: dupeTypeErr } = await asAdminA
+  .from("consultation_note_types")
+  .insert({ clinic_id: clinicA, name: "Probe Diagnosis" });
+check(
+  "Duplicate field name within a clinic rejected",
+  dupeTypeErr?.code === "23505",
+  dupeTypeErr?.code ?? "none",
+);
+
+// The same label in another clinic is a different clinic's business.
+const { error: sameNameElsewhereErr } = await admin
+  .from("consultation_note_types")
+  .insert({ clinic_id: clinicB, name: "Probe Diagnosis" });
+check(
+  "The same field name is free in another clinic",
+  !sameNameElsewhereErr,
+  sameNameElsewhereErr?.code ?? "",
+);
+
+// ---------------------------------------------------------------------------
+section("Phase 4.3 — consultation notes are DOCTOR-write");
+
+const notePayload = (overrides = {}) => ({
+  clinic_id: clinicA,
+  consultation_id: ownConsultation.id,
+  patient_id: patientA,
+  note_type_id: adminType.id,
+  note_type_snapshot: "Probe Diagnosis",
+  content: "Probe finding",
+  ...overrides,
+});
+
+const { data: doctorNote, error: doctorNoteErr } = await asDoctorA
+  .from("consultation_notes")
+  .insert(notePayload({ show_on_receipt: true, display_order: 0 }))
+  .select("id")
+  .single();
+check("DOCTOR can add a note", Boolean(doctorNote), doctorNoteErr?.message ?? "");
+
+const { error: deskNoteErr } = await asFrontDeskA
+  .from("consultation_notes")
+  .insert(notePayload());
+check("FRONT_DESK cannot add a note", deskNoteErr?.code === "42501", deskNoteErr?.code ?? "none");
+
+const { error: adminNoteErr } = await asAdminA.from("consultation_notes").insert(notePayload());
+check("ADMIN cannot add a note", adminNoteErr?.code === "42501", adminNoteErr?.code ?? "none");
+
+const { error: optomNoteErr } = await asOptometristA
+  .from("consultation_notes")
+  .insert(notePayload());
+check(
+  "OPTOMETRIST cannot add a note",
+  optomNoteErr?.code === "42501",
+  optomNoteErr?.code ?? "none",
+);
+
+// Clinical text is never destroyed: the form deactivates a removed note, and
+// there is no DELETE policy to let anything else happen.
+const { data: deletedNote } = await asDoctorA
+  .from("consultation_notes")
+  .delete()
+  .eq("id", doctorNote.id)
+  .select("id");
+check("DOCTOR cannot DELETE a note — soft delete only", (deletedNote?.length ?? 0) === 0);
+
+const { data: deactivated } = await asDoctorA
+  .from("consultation_notes")
+  .update({ is_active: false })
+  .eq("id", doctorNote.id)
+  .select("is_active");
+check("DOCTOR can deactivate a note", deactivated?.[0]?.is_active === false);
+
+await asDoctorA.from("consultation_notes").update({ is_active: true }).eq("id", doctorNote.id);
+
+// ---------------------------------------------------------------------------
+section("Phase 4.3 — snapshot integrity and the printed letter");
+
+// Same property as medicine_name_snapshot: renaming a field must not rewrite a
+// letter already handed to a patient.
+await asAdminA
+  .from("consultation_note_types")
+  .update({ name: "Renamed Diagnosis" })
+  .eq("id", adminType.id);
+
+const { data: noteAfterRename } = await admin
+  .from("consultation_notes")
+  .select("note_type_snapshot")
+  .eq("id", doctorNote.id)
+  .maybeSingle();
+check(
+  "Note keeps the field label it was written under",
+  noteAfterRename?.note_type_snapshot === "Probe Diagnosis",
+  noteAfterRename?.note_type_snapshot ?? "none",
+);
+
+const { data: renamedType } = await admin
+  .from("consultation_note_types")
+  .select("name")
+  .eq("id", adminType.id)
+  .maybeSingle();
+check("The field master itself did rename", renamedType?.name === "Renamed Diagnosis");
+
+// The letter prints only what the doctor ticked.
+await asDoctorA
+  .from("consultation_notes")
+  .insert(notePayload({ content: "Private working note", show_on_receipt: false, display_order: 1 }));
+
+const { data: printable } = await asDoctorA
+  .from("consultation_notes")
+  .select("content")
+  .eq("consultation_id", ownConsultation.id)
+  .eq("is_active", true)
+  .eq("show_on_receipt", true);
+check(
+  "Only ticked notes reach the printed letter",
+  (printable ?? []).length === 1 && printable[0].content === "Probe finding",
+  `${printable?.length ?? 0} of 2 note(s)`,
+);
+
+// ---------------------------------------------------------------------------
+section("Phase 4.3 — cross-clinic isolation");
+
+const { data: bTypes } = await asDoctorA
+  .from("consultation_note_types")
+  .select("id")
+  .eq("clinic_id", clinicB);
+check("Clinic A cannot read clinic B fields", (bTypes?.length ?? 0) === 0);
+
+await admin.from("consultation_notes").insert({
+  clinic_id: clinicB,
+  consultation_id: consultB.id,
+  patient_id: patientB,
+  note_type_snapshot: "Probe Diagnosis",
+  content: "Clinic B only",
+});
+
+const { data: bNotes } = await asDoctorA
+  .from("consultation_notes")
+  .select("id")
+  .eq("clinic_id", clinicB);
+check("Clinic A cannot read clinic B notes", (bNotes?.length ?? 0) === 0);
+
+const { error: crossNoteErr } = await asDoctorA.from("consultation_notes").insert({
+  clinic_id: clinicB,
+  consultation_id: consultB.id,
+  patient_id: patientB,
+  note_type_snapshot: "Forged",
+  content: "Written into another clinic",
+});
+check(
+  "INSERT note into clinic B rejected",
+  Boolean(crossNoteErr),
+  crossNoteErr?.code ?? "none",
+);
+
+const { error: crossTypeErr } = await asAdminA
+  .from("consultation_note_types")
+  .insert({ clinic_id: clinicB, name: "Forged Field" });
+check(
+  "INSERT field into clinic B rejected",
+  Boolean(crossTypeErr),
+  crossTypeErr?.code ?? "none",
+);
+}
+
+if (phase43Ready) {
+  await runPhase43DatabaseTests();
+} else {
+  section("Phase 4.3 — SKIPPED");
+  console.log("  Consultation-note tables are absent. Apply supabase/migrations/0008_phase4.3_consultation_notes.sql");
   console.log("  (Supabase Dashboard → SQL Editor → paste → Run), then re-run this suite.");
   fail += 1;
 }

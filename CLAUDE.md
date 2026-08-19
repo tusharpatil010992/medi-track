@@ -699,6 +699,7 @@ DONE ✓
 | 4 | Billing, notifications | ✅ Complete — 119/119 isolation tests ([summary](./summary/phase4_implementation.md)) |
 | 4.1 | Date-stamped reference numbers (`P260818001`) | ✅ Complete — 119/119 isolation tests ([summary](./summary/phase4.1_implementation.md)) |
 | 4.2 | Invoice lines show amount only (Qty / Unit price hidden) | ✅ Complete — 119/119 isolation tests ([summary](./summary/phase4.2_implementation.md)) |
+| 4.3 | Clinic-defined consultation notes; the five fixed clinical fields reserved | ✅ Complete — migration 0008 applied, 139/139 isolation tests ([summary](./summary/phase4.3_implementation.md)) |
 | 5 | Documents, audit, production readiness | Not started |
 
 ---

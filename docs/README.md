@@ -177,6 +177,13 @@ Application must remain deployable to Vercel. This means:
 - Quantity and unit price are still captured and stored, just not displayed
 - See: [database.md - invoice_items](./database.md#phase-4-billing--notifications)
 
+### Phase 4.3: Clinic-defined consultation notes
+- The five fixed clinical textareas are replaced by any number of notes, each
+  with a field, free text, and a "show on printed letter" checkbox
+- The field list is clinic master data at `/note-types`, maintained by ADMIN
+  **and DOCTOR**
+- See: [requirements.md - Phase 4.3](./requirements.md#phase-43-clinic-defined-consultation-notes)
+
 ### Phase 5: Security & Production (Weeks 11-12)
 - Medical documents (Supabase Storage)
 - Audit logging
@@ -348,7 +355,8 @@ A: Test cross-clinic access in Supabase SQL Editor as different users.
 ## Last Updated
 
 2026-08-19 — Phases 1–4 delivered, plus Phase 4.1 (date-stamped reference
-numbers) and Phase 4.2 (invoice lines show amount only); Phase 5 not started.
+numbers), Phase 4.2 (invoice lines show amount only) and Phase 4.3
+(clinic-defined consultation notes); Phase 5 not started.
 
 ---
 

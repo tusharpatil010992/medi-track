@@ -17,6 +17,13 @@ import type { Consultation } from "@/types/clinical";
 
 const INITIAL_STATE: ConsultationFormState = { error: null, consultationId: null };
 
+/**
+ * The consultation's follow-up arrangements.
+ *
+ * The five clinical textareas that used to live here — chief complaint,
+ * history, examination findings, diagnosis and treatment plan — moved to
+ * ConsultationNotesForm in Phase 4.3, where a clinic decides its own fields.
+ */
 export function ConsultationDetailsForm({
   consultation,
   readOnly,
@@ -30,7 +37,7 @@ export function ConsultationDetailsForm({
     <Card>
       <CardContent>
         <Typography variant="h4" component="h2" gutterBottom>
-          Consultation
+          Follow-up
         </Typography>
 
         <form action={formAction} noValidate>
@@ -39,53 +46,6 @@ export function ConsultationDetailsForm({
           <Stack spacing={2}>
             {state.error ? <Alert severity="error">{state.error}</Alert> : null}
             {state.consultationId ? <Alert severity="success">Saved.</Alert> : null}
-
-            <TextField
-              name="chief_complaint"
-              label="Chief complaint"
-              fullWidth
-              multiline
-              rows={2}
-              disabled={readOnly}
-              defaultValue={consultation.chief_complaint ?? ""}
-            />
-            <TextField
-              name="patient_history"
-              label="History"
-              fullWidth
-              multiline
-              rows={3}
-              disabled={readOnly}
-              defaultValue={consultation.patient_history ?? ""}
-              helperText="Allergies, existing conditions, current medication, family history"
-            />
-            <TextField
-              name="examination_findings"
-              label="Examination findings"
-              fullWidth
-              multiline
-              rows={3}
-              disabled={readOnly}
-              defaultValue={consultation.examination_findings ?? ""}
-            />
-            <TextField
-              name="diagnosis"
-              label="Diagnosis"
-              fullWidth
-              multiline
-              rows={2}
-              disabled={readOnly}
-              defaultValue={consultation.diagnosis ?? ""}
-            />
-            <TextField
-              name="treatment_plan"
-              label="Treatment plan / doctor's note"
-              fullWidth
-              multiline
-              rows={3}
-              disabled={readOnly}
-              defaultValue={consultation.treatment_plan ?? ""}
-            />
 
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField
@@ -108,7 +68,7 @@ export function ConsultationDetailsForm({
 
             {readOnly ? null : (
               <div>
-                <SubmitButton>Save consultation</SubmitButton>
+                <SubmitButton>Save follow-up</SubmitButton>
               </div>
             )}
           </Stack>
